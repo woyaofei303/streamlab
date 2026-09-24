@@ -1,0 +1,38 @@
+# 本地实训配置：只映射到宿主机回环地址；匿名权限不适用于直接部署到公网。
+logLevel: info
+rtsp: false
+rtmp: true
+rtmpAddress: :1935
+hls: true
+hlsAddress: :8888
+# LL-HLS 由媒体服务输出分片/部分分片，播放器 lowLatencyMode 只是接收端配合。
+hlsVariant: lowLatency
+hlsAlwaysRemux: true
+hlsAllowOrigins: ['http://localhost:3000', 'http://127.0.0.1:3000']
+webrtc: true
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+# Docker Desktop 的 UDP 可达性受环境影响；TCP 是本地回退路径，不能替代公网 TURN 方案。
+webrtcLocalTCPAddress: :8189
+webrtcAdditionalHosts: ['127.0.0.1', 'localhost']
+webrtcAllowOrigins: ['http://localhost:3000', 'http://127.0.0.1:3000']
+api: true
+apiAddress: :9997
+playback: true
+playbackAddress: :9996
+playbackAllowOrigins: ['http://localhost:3000', 'http://127.0.0.1:3000']
+authInternalUsers:
+  - user: any
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+      - action: api
+paths:
+  live:
+    record: true
+    recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+    recordFormat: fmp4
+    # 一分钟一个磁盘录制段，不是 HLS 播放分片时长，也不是浏览器延迟指标。
+    recordSegmentDuration: 1m
+  rtc:

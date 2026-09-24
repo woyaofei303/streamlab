@@ -1,0 +1,71 @@
+@import "tailwindcss";
+@theme {
+  --font-sans: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+:root {
+  color-scheme: dark;
+  background: #0e0e10;
+  color: #f4f4f5;
+  font-family: var(--font-sans);
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+a {
+  touch-action: manipulation;
+}
+button:not(:disabled),
+select {
+  cursor: pointer;
+}
+::selection {
+  background: #8b5cf660;
+}
+::-webkit-scrollbar {
+  width: 5px;
+  height: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: #37373f;
+  border-radius: 8px;
+}
+input[type="range"] {
+  accent-color: #a78bfa;
+}
+a,
+button {
+  -webkit-user-select: none;
+  user-select: none;
+}
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 3px;
+}
+video::cue {
+  background: #0009;
+  color: white;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: accessibility preference overrides component motion */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: accessibility preference overrides component motion */
+    transition-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: accessibility preference overrides component motion */
+    scroll-behavior: auto !important;
+  }
+}

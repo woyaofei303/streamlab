@@ -1,0 +1,6 @@
+allowBuilds:
+  '@parcel/watcher': false
+  '@swc/core': true
+  msw: false
+  esbuild: true
+  sharp: true

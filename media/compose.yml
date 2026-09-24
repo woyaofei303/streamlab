@@ -1,0 +1,25 @@
+# 本地实训配置：只映射到宿主机回环地址；匿名权限不适用于直接部署到公网。
+name: streamlab
+services:
+  media:
+    image: bluenviron/mediamtx:1.21.1
+    ports:
+      - '127.0.0.1:1935:1935'
+      - '127.0.0.1:8888:8888'
+      - '127.0.0.1:8889:8889'
+      - '127.0.0.1:8189:8189/udp'
+      - '127.0.0.1:8189:8189/tcp'
+      - '127.0.0.1:9997:9997'
+      - '127.0.0.1:9996:9996'
+    volumes:
+      - './mediamtx.yml:/mediamtx.yml:ro'
+      - './recordings:/recordings'
+    restart: unless-stopped
+  # 可选 FFmpeg 推流器与 OBS 使用同一 live 路径；演示结束后停止，避免循环推流持续写录制文件。
+  fixture:
+    profiles: ['fixture']
+    image: jrottenberg/ffmpeg:7.1-alpine
+    depends_on: [media]
+    volumes:
+      - '../public/media:/assets:ro'
+    command: ['-re', '-stream_loop', '-1', '-i', '/assets/demo.mp4', '-c', 'copy', '-f', 'flv', 'rtmp://media:1935/live']

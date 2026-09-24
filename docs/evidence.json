@@ -1,0 +1,467 @@
+{
+  "stats": {
+    "startTime": "2026-09-24T03:23:48.250Z",
+    "duration": 176151.942,
+    "expected": 27,
+    "skipped": 12,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "checks": {
+    "lifecycle": {
+      "switches": 30,
+      "remainingPlayers": 0
+    },
+    "message-load": {
+      "sent": 6000,
+      "elapsedMs": 59170,
+      "retainedMessages": 4000,
+      "maxLongTaskMs": 66,
+      "longTaskCount": 1,
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.12 Safari/537.36",
+      "hardwareConcurrency": 10,
+      "responseMs": 71,
+      "renderedRows": 27
+    },
+    "whip-whep": [
+      {
+        "kind": "audio",
+        "readyState": "live"
+      },
+      {
+        "kind": "video",
+        "readyState": "live"
+      }
+    ]
+  },
+  "playback": {
+    "at": "2026-09-24T03:28:09.358Z",
+    "browser": "153.0.8010.12",
+    "cache": "Fresh context per run, HTTP cache disabled; identical media via static/slow/throttled endpoints",
+    "results": [
+      {
+        "mode": "normal",
+        "startupMs": 214,
+        "stalls": 0,
+        "stallMs": 0,
+        "levels": ["720p"],
+        "events": [
+          {
+            "time": 297.10000002384186,
+            "type": "load_start",
+            "value": "/media/master.m3u8"
+          },
+          {
+            "time": 318.60000002384186,
+            "type": "manifest"
+          },
+          {
+            "time": 420.89999997615814,
+            "type": "hls_warning",
+            "value": "bufferSeekOverHole"
+          },
+          {
+            "time": 421.10000002384186,
+            "type": "seeking"
+          },
+          {
+            "time": 510.6999999284744,
+            "type": "first_frame",
+            "value": 214
+          },
+          {
+            "time": 516.2999999523163,
+            "type": "seeked"
+          },
+          {
+            "time": 522.6000000238419,
+            "type": "level_switch",
+            "value": "720p"
+          },
+          {
+            "time": 528.6999999284744,
+            "type": "playing"
+          },
+          {
+            "time": 2492.100000023842,
+            "type": "pause"
+          },
+          {
+            "time": 2537.600000023842,
+            "type": "seeking"
+          },
+          {
+            "time": 2537.6999999284744,
+            "type": "seeking"
+          },
+          {
+            "time": 2545.2999999523163,
+            "type": "seeked"
+          }
+        ]
+      },
+      {
+        "mode": "normal",
+        "startupMs": 72,
+        "stalls": 0,
+        "stallMs": 0,
+        "levels": ["720p"],
+        "events": [
+          {
+            "time": 287.10000002384186,
+            "type": "load_start",
+            "value": "/media/master.m3u8"
+          },
+          {
+            "time": 309.10000002384186,
+            "type": "manifest"
+          },
+          {
+            "time": 349.5,
+            "type": "playing"
+          },
+          {
+            "time": 349.8000000715256,
+            "type": "level_switch",
+            "value": "720p"
+          },
+          {
+            "time": 358.5,
+            "type": "first_frame",
+            "value": 72
+          },
+          {
+            "time": 2471.3000000715256,
+            "type": "pause"
+          },
+          {
+            "time": 2478.3000000715256,
+            "type": "seeking"
+          },
+          {
+            "time": 2478.600000023842,
+            "type": "seeking"
+          },
+          {
+            "time": 2495.5,
+            "type": "seeked"
+          }
+        ]
+      },
+      {
+        "mode": "normal",
+        "startupMs": 68,
+        "stalls": 0,
+        "stallMs": 0,
+        "levels": ["720p"],
+        "events": [
+          {
+            "time": 287.60000002384186,
+            "type": "load_start",
+            "value": "/media/master.m3u8"
+          },
+          {
+            "time": 309.3000000715256,
+            "type": "manifest"
+          },
+          {
+            "time": 349.89999997615814,
+            "type": "playing"
+          },
+          {
+            "time": 350.2000000476837,
+            "type": "level_switch",
+            "value": "720p"
+          },
+          {
+            "time": 355.10000002384186,
+            "type": "first_frame",
+            "value": 68
+          },
+          {
+            "time": 2484.5,
+            "type": "pause"
+          },
+          {
+            "time": 2491.399999976158,
+            "type": "seeking"
+          },
+          {
+            "time": 2491.8000000715256,
+            "type": "seeking"
+          },
+          {
+            "time": 2509.399999976158,
+            "type": "seeked"
+          }
+        ]
+      },
+      {
+        "mode": "slow",
+        "startupMs": 1582,
+        "stalls": 0,
+        "stallMs": 0,
+        "levels": ["720p"],
+        "events": [
+          {
+            "time": 377.2000000476837,
+            "type": "load_start",
+            "value": "/api/media/fault/master.m3u8?mode=slow"
+          },
+          {
+            "time": 399.10000002384186,
+            "type": "manifest"
+          },
+          {
+            "time": 1949.8000000715256,
+            "type": "playing"
+          },
+          {
+            "time": 1949.8999999761581,
+            "type": "level_switch",
+            "value": "720p"
+          },
+          {
+            "time": 1957.3000000715256,
+            "type": "first_frame",
+            "value": 1582
+          },
+          {
+            "time": 4086.899999976158,
+            "type": "pause"
+          },
+          {
+            "time": 4093.600000023842,
+            "type": "seeking"
+          },
+          {
+            "time": 4093.8000000715256,
+            "type": "seeking"
+          },
+          {
+            "time": 4110.899999976158,
+            "type": "seeked"
+          }
+        ]
+      },
+      {
+        "mode": "slow",
+        "startupMs": 1567,
+        "stalls": 0,
+        "stallMs": 0,
+        "levels": ["720p"],
+        "events": [
+          {
+            "time": 356.90000009536743,
+            "type": "load_start",
+            "value": "/api/media/fault/master.m3u8?mode=slow"
+          },
+          {
+            "time": 375.90000009536743,
+            "type": "manifest"
+          },
+          {
+            "time": 1922.4000000953674,
+            "type": "first_frame",
+            "value": 1567
+          },
+          {
+            "time": 1931.2000000476837,
+            "type": "playing"
+          },
+          {
+            "time": 1931.5,
+            "type": "level_switch",
+            "value": "720p"
+          },
+          {
+            "time": 4051.2000000476837,
+            "type": "pause"
+          },
+          {
+            "time": 4058.100000023842,
+            "type": "seeking"
+          },
+          {
+            "time": 4058.4000000953674,
+            "type": "seeking"
+          },
+          {
+            "time": 4076.2000000476837,
+            "type": "seeked"
+          }
+        ]
+      },
+      {
+        "mode": "slow",
+        "startupMs": 1564,
+        "stalls": 0,
+        "stallMs": 0,
+        "levels": ["720p"],
+        "events": [
+          {
+            "time": 380.7999999523163,
+            "type": "load_start",
+            "value": "/api/media/fault/master.m3u8?mode=slow"
+          },
+          {
+            "time": 400.59999990463257,
+            "type": "manifest"
+          },
+          {
+            "time": 1937.8999999761581,
+            "type": "playing"
+          },
+          {
+            "time": 1938,
+            "type": "level_switch",
+            "value": "720p"
+          },
+          {
+            "time": 1943.6999999284744,
+            "type": "first_frame",
+            "value": 1564
+          },
+          {
+            "time": 4072.6999999284744,
+            "type": "pause"
+          },
+          {
+            "time": 4079.5999999046326,
+            "type": "seeking"
+          },
+          {
+            "time": 4080,
+            "type": "seeking"
+          },
+          {
+            "time": 4105.199999928474,
+            "type": "seeked"
+          }
+        ]
+      },
+      {
+        "mode": "bandwidth",
+        "startupMs": 13697,
+        "stalls": 6,
+        "stallMs": 8067,
+        "levels": ["720p", "360p"],
+        "events": [
+          {
+            "time": 388,
+            "type": "load_start",
+            "value": "/api/media/fault/master.m3u8?mode=bandwidth"
+          },
+          {
+            "time": 407.60000002384186,
+            "type": "manifest"
+          },
+          {
+            "time": 14076.200000047684,
+            "type": "playing"
+          },
+          {
+            "time": 14076.600000023842,
+            "type": "level_switch",
+            "value": "720p"
+          },
+          {
+            "time": 14083.300000071526,
+            "type": "first_frame",
+            "value": 13697
+          },
+          {
+            "time": 18111.800000071526,
+            "type": "stall_start"
+          },
+          {
+            "time": 18201.800000071526,
+            "type": "hls_warning",
+            "value": "bufferStalledError"
+          },
+          {
+            "time": 18393.600000023842,
+            "type": "playing"
+          },
+          {
+            "time": 18393.600000023842,
+            "type": "level_switch",
+            "value": "360p"
+          },
+          {
+            "time": 22383.300000071526,
+            "type": "stall_start"
+          },
+          {
+            "time": 22400.700000047684,
+            "type": "hls_warning",
+            "value": "bufferStalledError"
+          },
+          {
+            "time": 23438.700000047684,
+            "type": "playing"
+          },
+          {
+            "time": 27450.5,
+            "type": "stall_start"
+          },
+          {
+            "time": 27500.5,
+            "type": "hls_warning",
+            "value": "bufferStalledError"
+          },
+          {
+            "time": 28993.600000023842,
+            "type": "playing"
+          },
+          {
+            "time": 32984,
+            "type": "stall_start"
+          },
+          {
+            "time": 33001.300000071526,
+            "type": "hls_warning",
+            "value": "bufferStalledError"
+          },
+          {
+            "time": 34551.39999997616,
+            "type": "playing"
+          },
+          {
+            "time": 38566.39999997616,
+            "type": "stall_start"
+          },
+          {
+            "time": 38599.800000071526,
+            "type": "hls_warning",
+            "value": "bufferStalledError"
+          },
+          {
+            "time": 40363.700000047684,
+            "type": "playing"
+          },
+          {
+            "time": 44355.200000047684,
+            "type": "stall_start"
+          },
+          {
+            "time": 44400.200000047684,
+            "type": "hls_warning",
+            "value": "bufferStalledError"
+          },
+          {
+            "time": 46177,
+            "type": "playing"
+          }
+        ]
+      }
+    ]
+  },
+  "recording": {
+    "source": "MediaMTX actual recorded RTMP fixture",
+    "durationSeconds": 869.195,
+    "videoWidth": 1280,
+    "videoHeight": 720,
+    "currentTimeObserved": 0.01295
+  }
+}
