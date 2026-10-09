@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.env*
+deploy/.env*
+output-tdd
+docs-tdd
+media/recordings
+*.tsbuildinfo
+**/__pycache__
+shared
+releases
+backups
+state.json
+pending.json

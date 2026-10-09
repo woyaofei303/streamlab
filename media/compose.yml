@@ -1,10 +1,16 @@
 # 本地实训配置：只映射到宿主机回环地址；匿名权限不适用于直接部署到公网。
+# 学习顺序：本文件启动进程 → mediamtx.yml 配置接收/分发 → src/components/player.tsx 播放。
+# OBS/FFmpeg 是发送端，media 容器是接收端；启动接收端不代表已经有人推流。
 name: streamlab
 services:
   media:
     image: bluenviron/mediamtx:1.21.1
+    # 格式为「宿主机 IP:宿主机端口:容器端口」。127.0.0.1 让服务只供本机访问。
+    # 1935 接收 RTMP；8888 输出 HLS；8889 协商 WebRTC，8189 传输 WebRTC 媒体。
+    # 9997 提供状态管理 API；9996 提供录制回放，两者都不是推流入口。
     ports:
       - '127.0.0.1:1935:1935'
+      - '127.0.0.1:8554:8554'
       - '127.0.0.1:8888:8888'
       - '127.0.0.1:8889:8889'
       - '127.0.0.1:8189:8189/udp'
@@ -12,14 +18,21 @@ services:
       - '127.0.0.1:9997:9997'
       - '127.0.0.1:9996:9996'
     volumes:
+      # 左侧路径在你的电脑上，右侧在容器内；ro 表示容器只能读取配置。
       - './mediamtx.yml:/mediamtx.yml:ro'
+      # 录制写回宿主机，因此删除/重建容器后，已有视频仍保留在 media/recordings。
       - './recordings:/recordings'
     restart: unless-stopped
   # 可选 FFmpeg 推流器与 OBS 使用同一 live 路径；演示结束后停止，避免循环推流持续写录制文件。
   fixture:
+    # 只有显式启用 fixture profile 才启动测试发送端，普通 media:up 不会自动推流。
     profiles: ['fixture']
     image: jrottenberg/ffmpeg:7.1-alpine
     depends_on: [media]
     volumes:
       - '../public/media:/assets:ro'
+    # -re 按素材播放速度发送；-stream_loop -1 无限循环；-i 指定容器内的输入文件。
+    # -c copy 复用已编码的音视频；-f flv 使用适合 RTMP 的封装，不重新编码。
+    # media 是 Compose 网络中的服务名；这里用 localhost 会连到 FFmpeg 容器自己。
+    # URL 末尾 live 对应 mediamtx.yml 的 paths.live，也就是 OBS 的串流密钥。
     command: ['-re', '-stream_loop', '-1', '-i', '/assets/demo.mp4', '-c', 'copy', '-f', 'flv', 'rtmp://media:1935/live']

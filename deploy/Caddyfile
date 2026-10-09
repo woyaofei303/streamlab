@@ -1,0 +1,14 @@
+{$DOMAIN} {
+  handle_path /hls/* {
+    reverse_proxy 127.0.0.1:8888 {
+      header_down Location ^/ /hls/
+    }
+  }
+  @webrtc path /browser/whip* /browser/whep* /rtc/whip* /rtc/whep* /call/*/whep*
+  handle @webrtc {
+    reverse_proxy 127.0.0.1:8889
+  }
+  handle {
+    reverse_proxy 127.0.0.1:3000
+  }
+}

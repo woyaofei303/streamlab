@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <title>StreamLab</title>
+  <rect width="64" height="64" rx="16" fill="#8b5cf6"/>
+  <g fill="none" stroke="white" stroke-width="4" stroke-linecap="round">
+    <circle cx="32" cy="32" r="4" fill="white" stroke="none"/>
+    <path d="M24 24a11.3 11.3 0 0 0 0 16m16-16a11.3 11.3 0 0 1 0 16M17 17a21.2 21.2 0 0 0 0 30m30-30a21.2 21.2 0 0 1 0 30"/>
+  </g>
+</svg>

@@ -6,8 +6,10 @@
  */
 import { Camera, Mic, Phone, PhoneOff, Video } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { isPublicMedia, webrtcBase } from "@/lib/media-config"
+import { createMediaSession } from "@/lib/media-session"
 import { useApp } from "./providers"
-import { Button } from "./ui/primitives"
+import { Button, inputClass } from "./ui/primitives"
 
 type Signal = {
   from: string
@@ -282,28 +284,24 @@ export function RtcLab({ roomId = "lab" }: { roomId?: string }) {
     </div>
   )
 }
-/** WHIP 发布与 WHEP 订阅：当前只实现 MediaMTX 本机基础握手和删除会话，未实现 PATCH ICE restart。 */
+/** WHIP 发布与 WHEP 订阅；未实现 PATCH ICE restart。 */
 export function MediaRtc() {
+  const [publishPassword, setPublishPassword] = useState("")
   const { t, toast } = useApp(),
     video = useRef<HTMLVideoElement>(null),
-    peer = useRef<RTCPeerConnection | null>(null),
+    session = useRef<ReturnType<typeof createMediaSession> | null>(null),
     media = useRef<MediaStream | null>(null),
-    sessionUrl = useRef(""),
-    abort = useRef<AbortController | null>(null),
+    generation = useRef(0),
     [status, setStatus] = useState("idle")
   const stop = useCallback(() => {
-    abort.current?.abort()
-    peer.current?.close()
-    peer.current = null
-    media.current?.getTracks().forEach((t) => {
-      t.stop()
+    generation.current++
+    session.current?.close()
+    session.current = null
+    media.current?.getTracks().forEach((track) => {
+      track.stop()
     })
     media.current = null
     if (video.current) video.current.srcObject = null
-    if (sessionUrl.current) {
-      void fetch(sessionUrl.current, { method: "DELETE" }).catch(() => {})
-      sessionUrl.current = ""
-    }
     setStatus("idle")
   }, [])
   useEffect(
@@ -314,20 +312,17 @@ export function MediaRtc() {
   )
   const connect = async (publish: boolean) => {
     stop()
+    const token = generation.current
     setStatus("connecting")
-    const controller = new AbortController()
-    abort.current = controller
     try {
-      const pc = new RTCPeerConnection({ iceServers: [] })
-      peer.current = pc
       if (publish) {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: true,
         })
-        if (controller.signal.aborted) {
-          stream.getTracks().forEach((t) => {
-            t.stop()
+        if (token !== generation.current) {
+          stream.getTracks().forEach((track) => {
+            track.stop()
           })
           return
         }
@@ -336,64 +331,45 @@ export function MediaRtc() {
           video.current.srcObject = stream
           video.current.muted = true
         }
-        for (const track of stream.getTracks()) pc.addTrack(track, stream)
-        const codecs = RTCRtpSender.getCapabilities("video")?.codecs.filter(
-          (c) => c.mimeType.toLowerCase() === "video/h264",
-        )
-        for (const transceiver of pc.getTransceivers())
-          if (transceiver.sender.track?.kind === "video" && codecs?.length)
-            transceiver.setCodecPreferences(codecs)
-      } else {
-        pc.addTransceiver("video", { direction: "recvonly" })
-        pc.addTransceiver("audio", { direction: "recvonly" })
-        pc.ontrack = (e) => {
-          if (video.current) {
-            video.current.srcObject = e.streams[0]
-            video.current.muted = false
-          }
+      }
+      const current = createMediaSession(
+        `${webrtcBase}/rtc/${publish ? "whip" : "whep"}`,
+        publish ? (media.current ?? undefined) : undefined,
+        publishPassword,
+      )
+      session.current = current
+      current.peer.ontrack = (event) => {
+        if (session.current === current && video.current) {
+          video.current.srcObject = event.streams[0]
+          video.current.muted = false
         }
       }
-      pc.onconnectionstatechange = () => {
-        if (peer.current === pc) setStatus(pc.connectionState)
+      current.peer.onconnectionstatechange = () => {
+        if (session.current === current) setStatus(current.peer.connectionState)
       }
-      // 本版等待 ICE 收集完成或最多 3 秒，把已有候选随 SDP 一次提交；不是完整 trickle ICE 客户端。
-      await pc.setLocalDescription(await pc.createOffer())
-      await new Promise<void>((resolve) => {
-        if (pc.iceGatheringState === "complete") {
-          resolve()
-          return
-        }
-        const timer = setTimeout(resolve, 3000)
-        pc.onicegatheringstatechange = () => {
-          if (pc.iceGatheringState === "complete") {
-            clearTimeout(timer)
-            resolve()
-          }
-        }
-      })
-      if (controller.signal.aborted) return
-      const url = `http://localhost:8889/rtc/${publish ? "whip" : "whep"}`
-      const r = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/sdp" },
-        body: pc.localDescription?.sdp,
-        signal: controller.signal,
-      })
-      if (!r.ok) throw Error(`MediaMTX ${r.status}: ${await r.text()}`)
-      // 服务返回会话资源 URL；stop() 要 DELETE 远端资源，单 close 本地 peer 不代表服务端会话已删除。
-      const location = r.headers.get("Location")
-      if (location) sessionUrl.current = new URL(location, url).href
-      await pc.setRemoteDescription({ type: "answer", sdp: await r.text() })
-    } catch (e) {
-      // 旧 WHIP 请求取消后可能才抛错，不能用它的 catch 关闭当前新建的 WHEP 会话。
-      if (abort.current !== controller || controller.signal.aborted) return
-      toast(String(e))
+      await current.connect()
+    } catch (error) {
+      // 旧请求的迟到结果不能关闭新会话。
+      if (token !== generation.current) return
+      toast(String(error))
       stop()
     }
   }
   return (
     <div className="rounded-xl border border-white/10 bg-[#17171b] p-5">
       <h2 className="mb-3 text-sm font-semibold">MediaMTX · WHIP / WHEP</h2>
+      {isPublicMedia && (
+        <label className="mb-4 block text-xs text-zinc-400">
+          {t("推流密码", "Publish password")}
+          <input
+            type="password"
+            autoComplete="off"
+            value={publishPassword}
+            onChange={(event) => setPublishPassword(event.target.value)}
+            className={`${inputClass} mt-2`}
+          />
+        </label>
+      )}
       <p className="mb-4 text-xs text-zinc-500">
         {t(
           "一个标签页发布摄像头，另一个订阅 rtc 路径。需先启动媒体服务。",

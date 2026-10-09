@@ -1,0 +1,48 @@
+logLevel: info
+rtsp: true
+rtspAddress: 127.0.0.1:8554
+rtspTransports: [tcp]
+srt: false
+moq: false
+rtmp: true
+rtmpAddress: :1935
+hls: true
+hlsAddress: 127.0.0.1:8888
+hlsVariant: lowLatency
+hlsAlwaysRemux: true
+webrtc: true
+webrtcAddress: 127.0.0.1:8889
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+api: true
+apiAddress: 127.0.0.1:9997
+playback: true
+playbackAddress: 127.0.0.1:9996
+# 未传环境变量时拒绝发布；公网绝不能沿用本地的匿名 publish 权限。
+authInternalUsers:
+  - user: publisher
+    permissions: []
+  - user: any
+    permissions:
+      - action: read
+  - user: any
+    ips: [127.0.0.1, "::1"]
+    permissions:
+      - action: api
+      - action: playback
+      - action: publish
+        path: "~^call/[0-9a-f-]+$"
+pathDefaults:
+  overridePublisher: false
+paths:
+  live:
+    record: true
+    recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+    recordFormat: fmp4
+    recordSegmentDuration: 1m
+    recordDeleteAfter: 6h
+  browser:
+  rtc:
+
+  "~^call/[0-9a-f-]+$":
+    overridePublisher: false

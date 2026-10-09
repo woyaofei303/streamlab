@@ -210,31 +210,6 @@ export function execute(
       notice(`已预约 ${channel.name} 的直播`, channel.id)
     return true
   }
-  if (a.type === "requestCall") {
-    channel.callRequests ??= {}
-    channel.callRequests[user.id] = a.cancel ? "ended" : "requested"
-    return true
-  }
-  if (a.type === "answerCall") {
-    if (!canModerate(user, channel.ownerId)) throw Error("Permission denied")
-    const target = string(a.target)
-    if (!channel.callRequests?.[target]) throw Error("Request not found")
-    channel.callRequests[target] = z
-      .enum(["accepted", "rejected", "ended"])
-      .parse(a.value)
-    s.notices.unshift({
-      id: id(),
-      userId: target,
-      channelId: channel.id,
-      read: false,
-      at: time,
-      text:
-        a.value === "accepted"
-          ? "连麦申请已接受，请打开房间连麦页 / Join the room call tab"
-          : "连麦申请状态已更新 / Call request updated",
-    })
-    return true
-  }
   if (a.type === "history") {
     user.history = [
       { channelId: channel.id, at: time },
@@ -490,8 +465,19 @@ export function execute(
       return channel
     }
     // 预约时已售出的票绑定了 sessionId，正式开播要沿用它；已结束后重开才创建新场次。
+    const broadcastId =
+      a.broadcastId === undefined ? undefined : z.uuid().parse(a.broadcastId)
+    // 离开旧标签页的异步清理，不能结束后来开始的网页直播。
+    if (a.type === "end" && broadcastId && channel.broadcastId !== broadcastId)
+      return channel
     if (a.type === "start") {
-      if (channel.startedAt && channel.status === "live") return channel
+      if (
+        channel.startedAt &&
+        channel.status === "live" &&
+        channel.broadcastId === broadcastId
+      )
+        return channel
+      channel.broadcastId = broadcastId
       if (channel.status === "ended") channel.sessionId = id()
       channel.sessionId ??= id()
       channel.startedAt = time

@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      HUSKY: "0"
+      IMAGE: ghcr.io/woyaofei303/streamlab:sha-${{ github.sha }}
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Install and check
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          pnpm install --frozen-lockfile
+          pnpm exec next typegen
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm test:deploy
+          pnpm exec playwright install --with-deps chromium
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build the production image once
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          load: true
+          platforms: linux/amd64
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            NEXT_PUBLIC_MEDIA_HOST=live.sunshinedairy.net
+            APP_REVISION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+      - name: Test this image against isolated media
+        env:
+          WEB_IMAGE: ${{ env.IMAGE }}
+          DOMAIN: localhost
+          PUBLIC_IP: 127.0.0.1
+          STREAMLAB_CONFIG_DIR: ${{ github.workspace }}/deploy
+        run: |
+          export PUBLISH_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::$PUBLISH_PASSWORD"
+          export STREAMLAB_TEST_PASSWORD="$PUBLISH_PASSWORD"
+          export STREAMLAB_CI_MEDIA=1
+          compose=(docker compose -p streamlab-ci -f deploy/compose.yml -f deploy/ci.compose.yml)
+          trap '"${compose[@]}" down --timeout 10' EXIT
+          "${compose[@]}" up -d --wait --wait-timeout 90
+          node scripts/check-seo.mjs http://localhost:8080
+          "${compose[@]}" exec -T web ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc2=size=1280x720:rate=24 -re -f lavfi -i sine=frequency=440:sample_rate=48000 -t 300 -c:v libx264 -threads 1 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -profile:v baseline -g 24 -c:a aac -f flv "rtmp://127.0.0.1:1935/live?user=publisher&pass=$PUBLISH_PASSWORD" &
+          publisher=$!
+          pnpm exec playwright test --config playwright.ci.config.ts
+          kill "$publisher" 2>/dev/null || true
+      - name: Save failed browser traces
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: failed-browser-${{ github.run_id }}
+          path: output-tdd/playwright/ci
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Login for trusted main builds only
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the tested image and configuration
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          docker push "$IMAGE"
+          reference=$(docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}')
+          python3 deploy/package-release.py create "$GITHUB_SHA" "${reference#*@}" output-tdd/release
+          python3 deploy/package-release.py verify "$GITHUB_SHA" - output-tdd/release
+          printf '### Tested release\n\nCommit: `%s`\n\nImage: `%s`\n' "$GITHUB_SHA" "$reference" >> "$GITHUB_STEP_SUMMARY"
+      - name: Save immutable release bundle
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ github.sha }}
+          path: |
+            output-tdd/release/release.tgz
+            output-tdd/release/release.json
+          retention-days: 14
+          if-no-files-found: error

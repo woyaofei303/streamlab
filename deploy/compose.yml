@@ -1,0 +1,54 @@
+name: streamlab
+services:
+  web:
+    image: ${WEB_IMAGE:?Set immutable WEB_IMAGE}
+    environment:
+      PUBLISH_PASSWORD: ${PUBLISH_PASSWORD:?Set PUBLISH_PASSWORD}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    network_mode: host
+    restart: unless-stopped
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+  media:
+    image: bluenviron/mediamtx:1.21.1@sha256:5ce2a948eb68df06ce2e13870db8df8e30d516ac4dc40e04bfe8aee3bdf7be40
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      MTX_WEBRTCADDITIONALHOSTS: ${PUBLIC_IP:?Set PUBLIC_IP}
+      MTX_HLSALLOWORIGINS: https://${DOMAIN}
+      MTX_WEBRTCALLOWORIGINS: https://${DOMAIN}
+      MTX_AUTHINTERNALUSERS_0_USER: publisher
+      MTX_AUTHINTERNALUSERS_0_PASS: ${PUBLISH_PASSWORD:?Set PUBLISH_PASSWORD}
+      MTX_AUTHINTERNALUSERS_0_PERMISSIONS_0_ACTION: publish
+      MTX_AUTHINTERNALUSERS_0_PERMISSIONS_0_PATH: live
+      MTX_AUTHINTERNALUSERS_0_PERMISSIONS_1_ACTION: publish
+      MTX_AUTHINTERNALUSERS_0_PERMISSIONS_1_PATH: browser
+      MTX_AUTHINTERNALUSERS_0_PERMISSIONS_2_ACTION: publish
+      MTX_AUTHINTERNALUSERS_0_PERMISSIONS_2_PATH: rtc
+    volumes:
+      - ${STREAMLAB_CONFIG_DIR:-.}/mediamtx.yml:/mediamtx.yml:ro
+      - recordings:/recordings
+    logging: *logging
+  proxy:
+    image: caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ${STREAMLAB_CONFIG_DIR:-.}/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *logging
+volumes:
+  recordings:
+  caddy_data:
+  caddy_config:

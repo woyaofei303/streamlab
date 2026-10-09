@@ -1,9 +1,12 @@
 import type { Metadata } from "next"
+import { siteDescription, siteTitle, siteUrl } from "@/lib/seo"
 import "./globals.css"
 export const metadata: Metadata = {
-  title: "StreamLab · 找到你的同频时刻",
-  description:
-    "Live moments. Real connections. A local livestream frontend playground.",
+  metadataBase: new URL(siteUrl),
+  title: { default: siteTitle, template: "%s · StreamLab" },
+  description: siteDescription,
+  applicationName: "StreamLab",
+  robots: { index: false, follow: true },
 }
 export default function RootLayout({
   children,

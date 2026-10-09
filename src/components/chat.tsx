@@ -10,6 +10,7 @@ import {
   Smile,
 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { chatUrl } from "@/lib/api"
 import { canModerate, mergeMessages } from "@/lib/domain"
 import type { Channel, ChatMessage } from "@/lib/types"
 import { useApp } from "./providers"
@@ -67,7 +68,7 @@ export function Chat({
     const connect = () => {
       if (disposed) return
       setConnection("connecting")
-      const ws = new WebSocket("ws://localhost:3000/chat")
+      const ws = new WebSocket(chatUrl())
       socket.current = ws
       ws.onopen = () => {
         if (disposed) {

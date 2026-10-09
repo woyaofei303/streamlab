@@ -5,6 +5,7 @@ import { Download, RefreshCcw, RotateCcw } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { api } from "@/lib/api"
 import type { Scenario } from "@/lib/types"
+import { LivePlayer, localLiveSource } from "./live-player"
 import { type PlaybackMetrics, Player, playerResources } from "./player"
 import { useApp } from "./providers"
 import { MediaRtc, RtcLab } from "./rtc-lab"
@@ -125,8 +126,8 @@ export function Lab() {
               <option value="/media/master.m3u8">
                 {t("本地多码率 HLS", "Local multi-bitrate HLS")}
               </option>
-              <option value="http://localhost:8888/live/index.m3u8">
-                OBS · LL-HLS
+              <option value={localLiveSource.url}>
+                OBS / FFmpeg · RTMP → LL-HLS
               </option>
               <option value="/api/media/fault/master.m3u8?mode=slow">
                 {t("慢分片：额外 1500ms", "Slow segments: +1500ms")}
@@ -145,14 +146,18 @@ export function Lab() {
               </option>
             </select>
           </label>
-          <Player
-            source={{
-              kind: "hls",
-              url: source,
-              live: source.includes(":8888"),
-            }}
-            onMetrics={setMetrics}
-          />
+          {source === localLiveSource.url ? (
+            <LivePlayer onMetrics={setMetrics} />
+          ) : (
+            <Player
+              source={{
+                kind: "hls",
+                url: source,
+                live: source.includes(":8888"),
+              }}
+              onMetrics={setMetrics}
+            />
+          )}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
               [

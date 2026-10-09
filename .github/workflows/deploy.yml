@@ -1,0 +1,73 @@
+name: Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 发布 main 的已验证版本，或回滚上一成功版本（直播中会拒绝）
+        type: choice
+        required: true
+        default: deploy
+        options: [deploy, rollback]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: streamlab-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Resolve the successful CI build for this exact commit
+        if: inputs.operation == 'deploy'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&head_sha=$GITHUB_SHA&status=success&per_page=20" --jq '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")][0].id')
+          if [[ "$run_id" == null || -z "$run_id" ]]; then
+            echo 'This commit has no successful CI release. Production was not changed.'
+            exit 1
+          fi
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name "release-$GITHUB_SHA" --dir output-tdd/release
+          python3 deploy/package-release.py verify "$GITHUB_SHA" - output-tdd/release
+      - name: Deploy or rollback using the restricted server entry point
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          task_ssh_dir=$(mktemp -d)
+          trap 'rm -rf -- "$task_ssh_dir"' EXIT
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$task_ssh_dir/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$task_ssh_dir/known_hosts"
+          chmod 600 "$task_ssh_dir/key" "$task_ssh_dir/known_hosts"
+          ssh_options=(-T -i "$task_ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$task_ssh_dir/known_hosts" -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=8)
+          if [[ "$OPERATION" == deploy ]]; then
+            checksum=$(python3 deploy/package-release.py verify "$GITHUB_SHA" - output-tdd/release)
+          fi
+          set +e
+          if [[ "$OPERATION" == deploy ]]; then
+            ssh "${ssh_options[@]}" "streamlab-deploy@$DEPLOY_HOST" "deploy $GITHUB_SHA $checksum" < output-tdd/release/release.tgz > output-tdd/deploy.log 2>&1
+          else
+            mkdir -p output-tdd
+            ssh "${ssh_options[@]}" "streamlab-deploy@$DEPLOY_HOST" rollback </dev/null > output-tdd/deploy.log 2>&1
+          fi
+          result=$?
+          cat output-tdd/deploy.log
+          printf '### Production %s\n\nCommit: `%s`\n\nExit code: `%s`\n\n```text\n' "$OPERATION" "$GITHUB_SHA" "$result" >> "$GITHUB_STEP_SUMMARY"
+          cat output-tdd/deploy.log >> "$GITHUB_STEP_SUMMARY"
+          printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
+          exit "$result"

@@ -1,14 +1,24 @@
 # 本地实训配置：只映射到宿主机回环地址；匿名权限不适用于直接部署到公网。
+# 本地 RTMP 链路：OBS/FFmpeg → :1935/live → MediaMTX → :8888/live/index.m3u8 → 浏览器。
+# H.264/AAC 是压缩音视频的方法；RTMP 是传输协议；HLS 用 HTTP 提供播放列表和媒体分片。
+# RTP、RTSP、RTMP 是不同协议，不能只改 URL 前缀就互换。
+# MediaMTX 将兼容的编码数据重新封装给播放器，不会自动生成多档清晰度。
 logLevel: info
-rtsp: false
+rtsp: true
+rtspAddress: :8554
+rtspTransports: [tcp]
+# 冒号前没有 IP 表示在容器的网络接口上监听；宿主机可访问范围由 compose.yml 决定。
 rtmp: true
 rtmpAddress: :1935
 hls: true
 hlsAddress: :8888
 # LL-HLS 由媒体服务输出分片/部分分片，播放器 lowLatencyMode 只是接收端配合。
 hlsVariant: lowLatency
+# 有输入流就准备 HLS 输出，无需等待第一个观众；没有输入时不会凭空生成直播。
 hlsAlwaysRemux: true
+# 页面在 3000 端口，HLS 在 8888：端口不同也是跨源，因此需要允许页面的 origin。
 hlsAllowOrigins: ['http://localhost:3000', 'http://127.0.0.1:3000']
+# WebRTC 是另一条播放/发布链路：HTTP 接口交换连接信息，UDP/TCP 端口传音视频。
 webrtc: true
 webrtcAddress: :8889
 webrtcLocalUDPAddress: :8189
@@ -16,11 +26,14 @@ webrtcLocalUDPAddress: :8189
 webrtcLocalTCPAddress: :8189
 webrtcAdditionalHosts: ['127.0.0.1', 'localhost']
 webrtcAllowOrigins: ['http://localhost:3000', 'http://127.0.0.1:3000']
+# Next.js 的 /api/media/status 查询这个 API，拿到真实输入状态；JSON 本身不含视频。
 api: true
 apiAddress: :9997
+# playback 读取磁盘录制，和上面的 hls 实时分片服务分工不同。
 playback: true
 playbackAddress: :9996
 playbackAllowOrigins: ['http://localhost:3000', 'http://127.0.0.1:3000']
+# any 允许匿名客户端执行列出的动作；本地学习依靠 Compose 的回环地址限制访问范围。
 authInternalUsers:
   - user: any
     permissions:
@@ -29,10 +42,19 @@ authInternalUsers:
       - action: playback
       - action: api
 paths:
+  # 网页开播独立于 OBS/FFmpeg；第二个发布者不能抢占正在直播的画面。
+  browser:
+    overridePublisher: false
+  # path 是媒体流的名字，不是前端页面路由。推流端和播放端必须使用相同的名字。
   live:
     record: true
+    # %path 替换为 live，后面的占位符生成时间戳文件名，避免不同录制段相互覆盖。
     recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
     recordFormat: fmp4
     # 一分钟一个磁盘录制段，不是 HLS 播放分片时长，也不是浏览器延迟指标。
     recordSegmentDuration: 1m
+  # 空配置仍定义了一条可发布的路径；浏览器 WHIP/WHEP 实验使用 rtc，与 live 分开。
   rtc:
+
+  "~^call/[0-9a-f-]+$":
+    overridePublisher: false

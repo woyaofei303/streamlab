@@ -1,6 +1,17 @@
 # StreamLab 架构、技术栈与完整实现链路
 
-这份文档描述当前仓库的实际实现。先读本篇建立结构，再按 [JD 学习指南](JD-STUDY.md) 做实验，最后使用 [面试脚本与追问](INTERVIEW.md) 练习表达。接口字段见 [API](API.md)，实测数据见 [验证报告](VERIFICATION.md)。
+这份文档解释代码如何组织、数据如何流动。还没跑过项目时，先做 [零基础教程](LIVE-BEGINNERS.md) 的开播练习。需要查字段时看 [API](API.md)，做实验时看 [JD 学习指南](JD-STUDY.md)。
+
+### 按职责找到代码
+
+- **页面入口**：`app.tsx` 决定展示哪个页面，`providers.tsx` 提供身份、语言和业务动作。
+- **主播开播**：`studio.tsx` 组织页面；`browser-broadcast.tsx` 按预览、开播、停播排列操作；`media-session.ts` 负责连接协商和关闭。
+- **观众播放**：`room.tsx` 选来源，`live-player.tsx` 等真实输入，`player.tsx` 播放媒体并记录指标。
+- **业务数据**：`api.ts` 发请求，`mocks/browser.ts` 模拟接口，`domain.ts` 处理规则，`db.ts` 保存结果。
+- **房间互动**：`chat.tsx` 管消息，`commerce.tsx` 管购买入口，`call-panel.tsx` 管服务器多人连麦，`rtc-lab.tsx` 保留双标签实验。
+- **媒体服务**：`media/` 配置接收和录制；`src/app/api/media/` 提供状态、回放和故障实验接口。
+
+读一个流程时，只沿这一组文件往下找。组件先列出状态和资源，再写操作，最后渲染界面。注释保留“为什么这样做”和取消、断线等边界；术语和完整操作步骤放在教程中。
 
 ## 1. 项目是什么，代码运行在哪里
 
@@ -67,7 +78,7 @@ flowchart TB
 | IndexedDB | [db.ts](../src/lib/db.ts) | 原生 readwrite 事务保证快照原子修改，无 Dexie/ORM |
 | BroadcastChannel / sessionStorage / localStorage | `db.ts`、`providers.tsx`、`rtc-lab.tsx` | 跨标签通知、信令、分标签身份、共享偏好；都受 origin 限制 |
 | Canvas 2D + requestAnimationFrame | `player.tsx → Danmaku` | 媒体时间调度、轨道间距、有界绘制，不逐帧更新 React |
-| WebRTC 浏览器 API | [rtc-lab.tsx](../src/components/rtc-lab.tsx)、[studio.tsx](../src/components/studio.tsx) | 设备采集、SDP、ICE、轨道、getStats；当前只验证本地链路 |
+| WebRTC 浏览器 API | [rtc-lab.tsx](../src/components/rtc-lab.tsx)、[browser-broadcast.tsx](../src/components/browser-broadcast.tsx)、[media-session.ts](../src/lib/media-session.ts) | 设备采集、SDP、ICE、轨道、getStats；当前只验证本地链路 |
 | MediaMTX 1.21.1 + Docker Compose | [media](../media) | RTMP → LL-HLS、WHIP/WHEP、fMP4 录制，不自动产生多码率转码 |
 | FFmpeg | [generate-media.mjs](../scripts/generate-media.mjs)、Compose fixture | 编码、缩放、多档 HLS、推流；与播放器解码职责不同 |
 | Vitest 5 + fake-indexeddb | [domain.test.ts](../tests/domain.test.ts)、[persistence.test.ts](../tests/persistence.test.ts) | 纯规则、并发扣余额、回滚、退款归属，使用现有行为测试 |
@@ -90,15 +101,18 @@ streamlab/
 │   ├── providers.tsx             MSW 启动、Query、身份、语言、act
 │   ├── home.tsx                  Home / ChannelPage / ChannelCard
 │   ├── room.tsx                  直播间组合层与试看、来源选择
+│   ├── live-player.tsx           等待真实输入、显示信号状态
 │   ├── player.tsx                Player / PlaybackMetrics / Danmaku
 │   ├── chat.tsx                  消息状态、连接管理、虚拟列表、房管动作
 │   ├── commerce.tsx              会员/票/充值/礼物弹窗
 │   ├── auth.tsx / library.tsx    模拟账号与个人业务记录
-│   ├── studio.tsx                主播设置、设备、信号、管理和录制入口
+│   ├── studio.tsx                主播设置、信号、聊天和录制入口
+│   ├── browser-broadcast.tsx     设备预览、网页开播、停播清理
 │   ├── rtc-lab.tsx                双标签 P2P + MediaMTX WebRTC
 │   ├── lab.tsx                    指标、故障、时钟、压测、重置
 │   └── ui/primitives.tsx         Button / Modal / Avatar / Empty / Badge
 ├── src/lib/                      类型、种子、规则、持久化、请求边界
+│   └── media-session.ts          WHIP/WHEP 媒体连接的建立与关闭
 ├── src/mocks/browser.ts          模拟 HTTP/WS 协议
 ├── public/
 │   ├── covers/                   本地封面，来源见 ASSETS.md
@@ -142,7 +156,7 @@ erDiagram
 
 这张图表示对象间业务关系，不是 SQL 表。IndexedDB 实际只有一个 `state` object store，`main` 键保存 `State` 快照：
 
-- `Channel` 同时包含频道信息、当前 `sessionId/status/startedAt/endedAt`、发言规则和连麦申请，没有独立场次表。
+- `Channel` 同时包含频道信息、当前 `sessionId/status/startedAt/endedAt`和发言规则，没有独立场次表；连麦状态由服务器独立管理。
 - `Order` 的 ticket 绑定频道及场次；`Membership` 绑定频道和来源订单；`Gift.funding` 保存充值来源分配。
 - `seq` 是整个模拟库递增序号，消息另外带 roomId；不能把不同房间的序号间隙都解释成丢消息。
 - 点播来源放在 `Channel.source`，没有独立 Video 表。真实录制由媒体接口列出，没有持久化到业务场次目录。
@@ -379,3 +393,10 @@ SDP 描述协商参数，ICE candidate 表示候选连接地址；先收到 cand
 ## 13. UI 参考
 
 独立品牌，借鉴 [Twitch](https://www.twitch.tv/directory) 的导航和视频聊天布局、[YouTube Live](https://www.youtube.com/live) 的内容组织、[Uscreen](https://www.uscreen.tv/live-streaming-platform/) 的付费入口。素材来源见 [ASSETS.md](ASSETS.md)。官方嵌入能力边界分别查 [Twitch 文档](https://dev.twitch.tv/docs/embed/video-and-clips/) 与 [YouTube 文档](https://developers.google.com/youtube/iframe_api_reference)。
+
+
+### 真实多人连麦
+
+`/api/calls` 在服务器验证房主密码，维护最多 4 个麦位、申请队列、超时和临时凭证；`/api/calls/media/*` 限定获批参与者发布自己的媒体路径。`call-mixer.ts` 每秒观察 MediaMTX 输入和连接状态，自动选择正在直播的来源（房主也可手动指定），按实际在线成员启动单个 FFmpeg 合成进程，结束或失败时释放。各输入按服务器墙钟同步，避免逐路归零导致画面错位；输出 720p H.264/Opus，观众通过 WHEP 接收合流。上麦者分别 WHEP 订阅其他成员，避开自己的延迟声音。网页房主与嘉宾共用 720p 摄像头采集参数；OBS 主播额外发布网页麦克风用于低延迟对话。
+
+这是单 Node 实例的内存状态，重启结束连麦；跨设备通过同一服务器通信，不依赖 BroadcastChannel。多人房间和集群需另行设计共享存储。其他模拟业务仍使用原来的 MSW/IndexedDB；昵称与「主播/观众」标签不是已验证账号权限。

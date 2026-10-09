@@ -31,9 +31,9 @@ export type Channel = {
   chatMode: "all" | "followers" | "members"
   mutedUsers: string[]
   sessionId?: string
+  broadcastId?: string // 网页发布归属；结束后保留，使观看页继续等待真实输入。
   startedAt?: number
   endedAt?: number
-  callRequests?: Record<string, "requested" | "accepted" | "rejected" | "ended">
   pinnedId?: string
 }
 export type User = {

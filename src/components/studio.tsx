@@ -1,211 +1,39 @@
 "use client"
 
-/** 轻量主播页：管理业务场次与房间互动，媒体信号单独查询 MediaMTX；不是运营管理后台。 */
-import {
-  Camera,
-  Copy,
-  Mic,
-  MonitorUp,
-  Radio,
-  Square,
-  Video,
-} from "lucide-react"
+import { Copy, Radio } from "lucide-react"
 import Image from "next/image"
-import { useCallback, useEffect, useRef, useState } from "react"
+import Link from "next/link"
+import { useEffect, useState } from "react"
+import { isPublicMedia, rtmpServer } from "@/lib/media-config"
+import { BrowserBroadcast } from "./browser-broadcast"
+import { CallPanel } from "./call-panel"
 import { Chat } from "./chat"
-import { Player } from "./player"
+import { LivePlayer, useMediaStatus } from "./live-player"
 import { useApp } from "./providers"
-import { RtcLab } from "./rtc-lab"
 import { Button, cn, Empty, inputClass, Modal } from "./ui/primitives"
 
-function DevicePreview() {
-  const { t, toast } = useApp(),
-    video = useRef<HTMLVideoElement>(null),
-    stream = useRef<MediaStream | null>(null),
-    [devices, setDevices] = useState<MediaDeviceInfo[]>([]),
-    [camera, setCamera] = useState(""),
-    [mic, setMic] = useState(""),
-    [active, setActive] = useState(false),
-    [muted, setMuted] = useState(false)
-  const generation = useRef(0)
-  const stop = useCallback(() => {
-    generation.current++
-    stream.current?.getTracks().forEach((track) => {
-      track.stop()
-    })
-    stream.current = null
-    if (video.current) video.current.srcObject = null
-    setActive(false)
-  }, [])
-  useEffect(
-    () => () => {
-      generation.current++
-      stream.current?.getTracks().forEach((track) => {
-        track.stop()
-      })
-    },
-    [],
-  )
-  const start = async (screen = false) => {
-    try {
-      stop()
-      // 设备请求是异步的；停止/切设备会推进代次，迟到结果必须 stop，不能重新占用摄像头。
-      const token = generation.current
-      const media = screen
-        ? await navigator.mediaDevices.getDisplayMedia({
-            video: true,
-            audio: true,
-          })
-        : await navigator.mediaDevices.getUserMedia({
-            video: camera ? { deviceId: { exact: camera } } : true,
-            audio: mic ? { deviceId: { exact: mic } } : true,
-          })
-      if (token !== generation.current) {
-        media.getTracks().forEach((track) => {
-          track.stop()
-        })
-        return
-      }
-      stream.current = media
-      if (video.current) video.current.srcObject = media
-      setActive(true)
-      setMuted(false)
-      media.getVideoTracks()[0].onended = stop
-      setDevices(await navigator.mediaDevices.enumerateDevices())
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Permission denied")
-    }
-  }
-  return (
-    <div>
-      <div className="relative grid aspect-video place-items-center overflow-hidden rounded-xl border border-white/10 bg-black">
-        <video
-          ref={video}
-          autoPlay
-          muted
-          playsInline
-          className="size-full object-contain"
-        />
-        {!active && (
-          <div className="absolute text-center">
-            <Video size={32} className="mx-auto text-zinc-600" />
-            <p className="mt-3 text-sm text-zinc-500">
-              {t("开启设备，预览你的画面", "Enable your devices to preview")}
-            </p>
-            <p className="mt-1 text-[10px] text-zinc-600">
-              {t(
-                "仅在本机预览，不会自动发布",
-                "Local preview only. Nothing is published automatically.",
-              )}
-            </p>
-          </div>
-        )}
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button variant="secondary" onClick={() => void start()}>
-          <Camera size={15} />
-          {t("摄像头", "Camera")}
-        </Button>
-        <Button variant="secondary" onClick={() => void start(true)}>
-          <MonitorUp size={15} />
-          {t("共享屏幕", "Share screen")}
-        </Button>
-        <Button
-          variant="secondary"
-          disabled={!active}
-          onClick={() => {
-            stream.current?.getAudioTracks().forEach((track) => {
-              track.enabled = muted
-            })
-            setMuted(!muted)
-          }}
-        >
-          <Mic size={15} />
-          {muted ? t("取消静音", "Unmute") : t("静音", "Mute")}
-        </Button>
-        <Button variant="danger" disabled={!active} onClick={stop}>
-          <Square size={13} />
-          {t("停止预览", "Stop")}
-        </Button>
-      </div>
-      {devices.length > 0 && (
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="text-xs text-zinc-500">
-            {t("摄像头（选择后重新开启）", "Camera (restart to apply)")}
-            <select
-              className={`${inputClass} mt-1`}
-              value={camera}
-              onChange={(e) => setCamera(e.target.value)}
-            >
-              <option value="">Default</option>
-              {devices
-                .filter((d) => d.kind === "videoinput")
-                .map((d) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label className="text-xs text-zinc-500">
-            {t("麦克风", "Microphone")}
-            <select
-              className={`${inputClass} mt-1`}
-              value={mic}
-              onChange={(e) => setMic(e.target.value)}
-            >
-              <option value="">Default</option>
-              {devices
-                .filter((d) => d.kind === "audioinput")
-                .map((d) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label}
-                  </option>
-                ))}
-            </select>
-          </label>
-        </div>
-      )}
-    </div>
-  )
-}
 export function Studio() {
-  const { state, user, t, act, setAuthOpen, toast } = useApp(),
-    [tab, setTab] = useState("setup"),
-    [end, setEnd] = useState(false),
-    [signal, setSignal] = useState(false),
-    [now, setNow] = useState(Date.now()),
-    [busy, setBusy] = useState(false),
-    [recordings, setRecordings] = useState<
-      { start: string; duration: number; url: string }[]
-    >([])
+  const { state, user, t, act, setAuthOpen, toast } = useApp()
+  const [endVersion, setEndVersion] = useState(0)
+  const [inCall, setInCall] = useState(false)
+  const [tab, setTab] = useState("devices")
+  const [isEndDialogOpen, setEndDialogOpen] = useState(false)
+  const [now, setNow] = useState(Date.now())
+  const [isSaving, setSaving] = useState(false)
+  const [recordings, setRecordings] = useState<
+    { start: string; duration: number; url: string }[]
+  >([])
+
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
-  const c = state?.channels.find((c) => c.ownerId === user?.id)
-  const roomId = c?.id
-  useEffect(() => {
-    if (!roomId) return
-    let live = true
-    const check = () =>
-      fetch("/api/media/status")
-        .then((r) => r.json())
-        .then((d) => {
-          if (live) setSignal(!!d.ready)
-        })
-        .catch(() => {
-          if (live) setSignal(false)
-        })
-    void check()
-    // 5 秒轮询实际输入信号，与 channel.status（用户控制的业务场次）分开；开播按钮不负责启动 OBS。
-    const timer = setInterval(check, 5000)
-    return () => {
-      live = false
-      clearInterval(timer)
-    }
-  }, [roomId])
-  if (!user || !c)
+  const channel = state?.channels.find(
+    (channel) => channel.ownerId === user?.id,
+  )
+  const media = useMediaStatus(channel?.broadcastId ? "browser" : "live")
+  const hasLiveInput = !media.isError && media.data?.ready
+  if (!user || !channel)
     return (
       <div className="p-8">
         <Empty
@@ -221,29 +49,37 @@ export function Studio() {
         </Empty>
       </div>
     )
-  const save = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    setBusy(true)
-    const f = new FormData(e.currentTarget)
+  let signalText = t("媒体服务未连接", "Media service unavailable")
+  if (hasLiveInput) {
+    signalText = t("输入信号正常", "Signal detected")
+  } else if (media.data?.online && !media.isError) {
+    signalText = t("等待推流信号", "Waiting for signal")
+  }
+
+  const saveSettings = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSaving(true)
+    const form = new FormData(event.currentTarget)
     try {
       await act({
         type: "updateRoom",
-        channelId: c.id,
-        title: f.get("title"),
-        category: f.get("category"),
-        language: f.get("language"),
-        access: f.get("access"),
-        announcement: f.get("announcement"),
-        slowMode: f.get("slow") === "on",
-        chatMode: f.get("chatMode"),
-        ...(f.get("schedule")
-          ? { scheduledAt: new Date(String(f.get("schedule"))).getTime() }
+        channelId: channel.id,
+        title: form.get("title"),
+        category: form.get("category"),
+        language: form.get("language"),
+        access: form.get("access"),
+        announcement: form.get("announcement"),
+        slowMode: form.get("slow") === "on",
+        chatMode: form.get("chatMode"),
+        ...(form.get("schedule")
+          ? { scheduledAt: new Date(String(form.get("schedule"))).getTime() }
           : {}),
       })
       toast(t("直播设置已保存", "Stream settings saved"))
     } catch {
+      // act 已显示错误提示，这里只负责恢复保存按钮。
     } finally {
-      setBusy(false)
+      setSaving(false)
     }
   }
   return (
@@ -261,25 +97,24 @@ export function Studio() {
           <span
             className={cn(
               "mr-2 flex items-center gap-2 text-xs",
-              signal ? "text-emerald-300" : "text-zinc-500",
+              hasLiveInput ? "text-emerald-300" : "text-zinc-500",
             )}
           >
             <span
               className={cn(
                 "size-2 rounded-full",
-                signal ? "bg-emerald-400" : "bg-zinc-600",
+                hasLiveInput ? "bg-emerald-400" : "bg-zinc-600",
               )}
             />
-            {signal
-              ? t("输入信号正常", "Signal detected")
-              : t("等待推流信号", "Waiting for signal")}
+            {signalText}
           </span>
-          <Button variant="secondary" onClick={() => setEnd(true)}>
+          <Button variant="secondary" onClick={() => setEndDialogOpen(true)}>
             {t("结束场次", "End session")}
           </Button>
           <Button
+            disabled={Boolean(channel.broadcastId && channel.status === "live")}
             onClick={() =>
-              void act({ type: "start", channelId: c.id })
+              void act({ type: "start", channelId: channel.id })
                 .then(() =>
                   toast(
                     t(
@@ -292,21 +127,22 @@ export function Studio() {
             }
           >
             <Radio size={15} />
-            {t("开始场次", "Start session")}
+            {t("开始 OBS 场次", "Start OBS session")}
           </Button>
         </div>
       </div>
-      {c.startedAt && (
+      {channel.startedAt && (
         <div className="mb-5 flex flex-wrap gap-6 rounded-xl border border-white/10 bg-white/5 p-4 text-xs">
           <span>
-            {c.endedAt
+            {channel.endedAt
               ? t("本场已结束", "Session ended")
               : t("直播时长", "Live duration")}
             :{" "}
             {Math.max(
               0,
               Math.floor(
-                ((c.endedAt ?? now + (state?.clockOffset ?? 0)) - c.startedAt) /
+                ((channel.endedAt ?? now + (state?.clockOffset ?? 0)) -
+                  channel.startedAt) /
                   1000,
               ),
             )}
@@ -316,14 +152,19 @@ export function Studio() {
             {t("本场消息", "Session messages")}:{" "}
             {
               state?.messages.filter(
-                (m) => m.roomId === c.id && m.time >= (c.startedAt ?? 0),
+                (m) =>
+                  m.roomId === channel.id && m.time >= (channel.startedAt ?? 0),
               ).length
             }
           </span>
           <span>
             {t("本场礼物币", "Session gift credits")}:{" "}
             {state?.gifts
-              .filter((g) => g.channelId === c.id && g.at >= (c.startedAt ?? 0))
+              .filter(
+                (g) =>
+                  g.channelId === channel.id &&
+                  g.at >= (channel.startedAt ?? 0),
+              )
               .reduce((n, g) => n + g.amount, 0)}
           </span>
         </div>
@@ -359,68 +200,36 @@ export function Studio() {
               </button>
             ))}
           </nav>
-          {tab === "call" ? (
-            <div className="space-y-4">
-              {Object.entries(c.callRequests ?? {})
-                .filter(([, status]) => status !== "ended")
-                .map(([id, status]) => (
-                  <div
-                    key={id}
-                    className="flex flex-wrap items-center gap-3 rounded-lg bg-white/5 p-3 text-xs"
-                  >
-                    <span>
-                      {state?.users.find((u) => u.id === id)?.name} · {status}
-                    </span>
-                    <Button
-                      variant="secondary"
-                      onClick={() =>
-                        void act({
-                          type: "answerCall",
-                          channelId: c.id,
-                          target: id,
-                          value: "accepted",
-                        }).catch(() => {})
-                      }
-                    >
-                      {t("接受申请", "Accept request")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() =>
-                        void act({
-                          type: "answerCall",
-                          channelId: c.id,
-                          target: id,
-                          value: "rejected",
-                        }).catch(() => {})
-                      }
-                    >
-                      {t("拒绝", "Decline")}
-                    </Button>
-                  </div>
-                ))}
-              <RtcLab roomId={c.id} />
-            </div>
-          ) : tab === "devices" ? (
-            <DevicePreview />
-          ) : tab === "preview" ? (
+          {/* 切换页内标签只隐藏预览，避免卸载采集组件而停播。 */}
+          <div hidden={tab !== "devices"}>
+            <BrowserBroadcast
+              key={`${channel.id}-${user.id}`}
+              channel={channel}
+            />
+          </div>
+          <CallPanel
+            host
+            open={tab === "call"}
+            channelId={channel.id}
+            onParticipationChange={setInCall}
+            endVersion={endVersion}
+          />
+          {tab === "preview" && (
             <div>
-              <Player
-                source={{
-                  kind: "hls",
-                  url: "http://localhost:8888/live/index.m3u8",
-                  live: true,
-                }}
-                poster={c.cover}
+              <LivePlayer
+                poster={channel.cover}
+                forceMuted={inCall}
+                browser={Boolean(channel.broadcastId)}
               />
               <p className="mt-3 text-xs text-zinc-500">
                 {t(
-                  "启动 MediaMTX 并从 OBS 推流后，预览会显示真实画面。",
-                  "Start MediaMTX and publish from OBS to view the live feed.",
+                  "这里显示媒体服务实际收到的直播画面；切换标签不会停止网页推流。",
+                  "This shows the received live feed. Switching studio tabs keeps browser publishing active.",
                 )}
               </p>
             </div>
-          ) : tab === "replays" ? (
+          )}
+          {tab === "replays" && (
             <div className="space-y-4">
               {recordings.length ? (
                 recordings.map((r) => (
@@ -450,13 +259,14 @@ export function Studio() {
                 />
               )}
             </div>
-          ) : (
-            <form onSubmit={save} className="space-y-5">
+          )}
+          {!["call", "devices", "preview", "replays"].includes(tab) && (
+            <form onSubmit={saveSettings} className="space-y-5">
               <div className="flex flex-wrap gap-4 rounded-xl border border-white/8 bg-[#17171b] p-4">
                 <Image
                   width={1280}
                   height={720}
-                  src={c.cover}
+                  src={channel.cover}
                   alt="Stream cover"
                   className="aspect-video w-36 rounded-lg object-cover"
                 />
@@ -482,7 +292,7 @@ export function Studio() {
                       reader.onload = () =>
                         void act({
                           type: "updateRoom",
-                          channelId: c.id,
+                          channelId: channel.id,
                           cover: reader.result,
                         }).catch(() => {})
                       reader.readAsDataURL(file)
@@ -494,7 +304,7 @@ export function Studio() {
                 {t("直播标题", "Stream title")}
                 <input
                   name="title"
-                  defaultValue={c.title}
+                  defaultValue={channel.title}
                   required
                   maxLength={100}
                   className={`${inputClass} mt-2`}
@@ -505,7 +315,7 @@ export function Studio() {
                   {t("分类", "Category")}
                   <select
                     name="category"
-                    defaultValue={c.category}
+                    defaultValue={channel.category}
                     className={`${inputClass} mt-2`}
                   >
                     {["irl", "gaming", "music", "creative"].map((x) => (
@@ -519,7 +329,7 @@ export function Studio() {
                   {t("语言", "Language")}
                   <select
                     name="language"
-                    defaultValue={c.language}
+                    defaultValue={channel.language}
                     className={`${inputClass} mt-2`}
                   >
                     <option value="zh">中文</option>
@@ -530,7 +340,7 @@ export function Studio() {
                   {t("观看权限", "Viewing access")}
                   <select
                     name="access"
-                    defaultValue={c.access}
+                    defaultValue={channel.access}
                     className={`${inputClass} mt-2`}
                   >
                     <option value="free">{t("免费", "Free")}</option>
@@ -554,7 +364,7 @@ export function Studio() {
                 {t("频道公告", "Channel announcement")}
                 <textarea
                   name="announcement"
-                  defaultValue={c.announcement}
+                  defaultValue={channel.announcement}
                   maxLength={300}
                   rows={3}
                   className={`${inputClass} mt-2`}
@@ -565,14 +375,14 @@ export function Studio() {
                   <input
                     type="checkbox"
                     name="slow"
-                    defaultChecked={c.slowMode}
+                    defaultChecked={channel.slowMode}
                   />
                   {t("慢速聊天（10 秒）", "Slow mode (10 seconds)")}
                 </label>
                 <select
                   aria-label="Chat permissions"
                   name="chatMode"
-                  defaultValue={c.chatMode}
+                  defaultValue={channel.chatMode}
                   className="rounded-lg bg-zinc-800 p-2 text-xs"
                 >
                   <option value="all">
@@ -584,7 +394,7 @@ export function Studio() {
                   <option value="members">{t("仅会员", "Members only")}</option>
                 </select>
               </div>
-              <Button type="submit" busy={busy}>
+              <Button type="submit" busy={isSaving}>
                 {t("保存直播设置", "Save stream settings")}
               </Button>
             </form>
@@ -595,13 +405,16 @@ export function Studio() {
             </h2>
             <p className="mb-3 text-xs leading-6 text-zinc-500">
               {t(
-                "先运行 pnpm media:up，再在 OBS 选择「自定义」服务。视频 H.264，音频 AAC，关键帧间隔 2 秒。",
-                "Run pnpm media:up, choose Custom in OBS. H.264 video, AAC audio, 2-second keyframes.",
+                "在 OBS 选择「自定义」服务。视频 H.264，音频 AAC，关键帧间隔 2 秒。公网推流需使用服务器提供的密码。",
+                "Choose Custom in OBS. H.264 video, AAC audio, 2-second keyframes. Public publishing requires your server's password.",
               )}
             </p>
             {[
-              ["Server", "rtmp://127.0.0.1:1935"],
-              ["Stream key", "live"],
+              ["Server", rtmpServer],
+              [
+                "Stream key",
+                isPublicMedia ? "live?user=publisher&pass=<推流密码>" : "live",
+              ],
             ].map(([label, value]) => (
               <div
                 key={label}
@@ -624,16 +437,22 @@ export function Studio() {
                 </button>
               </div>
             ))}
+            <Link
+              href="/live/mei?source=local"
+              className="mt-3 inline-block text-xs text-violet-300"
+            >
+              {t("打开真实直播观看页", "Watch the real live stream")} →
+            </Link>
           </div>
           <form
             onSubmit={(e) => {
               e.preventDefault()
-              const f = new FormData(e.currentTarget)
+              const form = new FormData(e.currentTarget)
               void act({
                 type: "poll",
-                channelId: c.id,
-                question: f.get("question"),
-                options: [f.get("option1"), f.get("option2")],
+                channelId: channel.id,
+                question: form.get("question"),
+                options: [form.get("option1"), form.get("option2")],
               })
                 .then(() => toast(t("投票已发布", "Poll published")))
                 .catch(() => {})
@@ -669,25 +488,26 @@ export function Studio() {
           </form>
         </div>
         <aside className="min-w-0 overflow-hidden rounded-xl border border-white/8 xl:sticky xl:top-20 xl:self-start">
-          <Chat channel={c} />
+          <Chat channel={channel} />
         </aside>
       </div>
       <Modal
-        open={end}
-        onOpenChange={setEnd}
+        open={isEndDialogOpen}
+        onOpenChange={setEndDialogOpen}
         title={t("结束本场直播？", "End this session?")}
         description={t(
-          "这会结束本地场次状态。OBS 推流需要在 OBS 中停止，录制随后完成。",
-          "This ends the local session state. Stop publishing in OBS separately to finalize the recording.",
+          "这会结束场次和本页网页推流。其他标签页会同步停播；OBS 仍需在 OBS 中停止。",
+          "Ends the session and browser broadcasts. Stop OBS publishing in OBS separately.",
         )}
       >
         <Button
           variant="danger"
           className="w-full"
           onClick={() =>
-            void act({ type: "end", channelId: c.id })
+            void act({ type: "end", channelId: channel.id })
               .then(() => {
-                setEnd(false)
+                setEndVersion((version) => version + 1)
+                setEndDialogOpen(false)
                 setTab("replays")
               })
               .catch(() => {})

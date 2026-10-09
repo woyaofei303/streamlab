@@ -107,7 +107,7 @@ test("real local RTMP input is playable through LL-HLS", async ({
   await open(page, "/lab")
   await page
     .getByRole("combobox", { name: "测试播放源", exact: true })
-    .selectOption("http://localhost:8888/live/index.m3u8")
+    .selectOption("http://127.0.0.1:8888/live/index.m3u8")
   await expect
     .poll(
       () =>

@@ -1,8 +1,8 @@
 "use client"
 
 /**
- * JD 重点：播放器接入、生命周期、异常恢复和 QoE。这里只封装 hls.js/原生 video，不是自研解码内核。
- * React 管理低频 UI；媒体对象与 Canvas 动画用 ref/effect 持有。详见 docs/ARCHITECTURE.md 的播放链路。
+ * 播放流程：监听 video 事件 → 加载 WebRTC / 文件 / HLS → 记录指标 → 切源时清理。
+ * 浏览器负责解码；React 只管理控件和状态。弹幕绘制在文件末尾的 Danmaku 中。
  */
 import Hls from "hls.js"
 import {
@@ -21,13 +21,15 @@ import {
   VolumeX,
 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { createMediaSession } from "@/lib/media-session"
 import type { ChatMessage, Metric, Source } from "@/lib/types"
 import { useApp } from "./providers"
 import { Button, cn } from "./ui/primitives"
-// 开发用实例计数辅助验证切房清理；归零不等于已经证明所有网络请求或浏览器堆内存无泄漏。
+// 用于测试切房后是否释放实例，不代表完整的内存泄漏检测。
 export const playerResources = { instances: 0, hls: 0 }
 export type PlaybackMetrics = {
   state: string
+  // QoE（观看体验）指标：首帧等待毫秒、可继续播放的缓冲秒数、卡顿次数/毫秒数。
   startupMs: number | null
   buffer: number
   stalls: number
@@ -53,6 +55,7 @@ export function Player({
   onMetrics,
   onTime,
   locked = false,
+  forceMuted = false,
   theater = false,
   onTheater,
 }: {
@@ -61,45 +64,49 @@ export function Player({
   messages?: ChatMessage[]
   onMetrics?: (m: PlaybackMetrics) => void
   onTime?: (n: number) => void
+  forceMuted?: boolean
   locked?: boolean
   theater?: boolean
   onTheater?: () => void
 }) {
-  const { t } = useApp(),
-    videoRef = useRef<HTMLVideoElement>(null),
-    container = useRef<HTMLDivElement>(null),
-    hls = useRef<Hls | null>(null),
-    metrics = useRef<PlaybackMetrics>({ ...initial, events: [] }),
-    metricsCallback = useRef(onMetrics),
-    timeCallback = useRef(onTime)
-  // 回调取最新引用，避免仅因父组件回调变化而重新创建整个播放器。
+  const { t } = useApp()
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const container = useRef<HTMLDivElement>(null)
+  const hls = useRef<Hls | null>(null)
+  const metrics = useRef<PlaybackMetrics>({ ...initial, events: [] })
+  const metricsCallback = useRef(onMetrics)
+  const timeCallback = useRef(onTime)
+  // 父组件回调变化时只更新引用，不重建播放器。
   metricsCallback.current = onMetrics
   timeCallback.current = onTime
-  const [status, setStatus] = useState("loading"),
-    [error, setError] = useState(""),
-    [paused, setPaused] = useState(true),
-    [muted, setMuted] = useState(true),
-    [progress, setProgress] = useState(0),
-    [duration, setDuration] = useState(0),
-    [quality, setQuality] = useState(-1),
-    [levels, setLevels] = useState<number[]>([]),
-    [retry, setRetry] = useState(0),
-    [danmu, setDanmu] = useState(true),
-    [settings, setSettings] = useState(false),
-    [speed, setSpeed] = useState(1),
-    [captions, setCaptions] = useState(false),
-    [pipAvailable, setPipAvailable] = useState(false),
-    [danmakuSettings, setDanmakuSettings] = useState({
-      speed: 1,
-      font: 17,
-      opacity: 0.85,
-      density: 8,
-    })
+
+  const [status, setStatus] = useState("loading")
+  const [error, setError] = useState("")
+  const [paused, setPaused] = useState(true)
+  const [muted, setMuted] = useState(true)
+  const [progress, setProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [quality, setQuality] = useState(-1)
+  const [levels, setLevels] = useState<number[]>([])
+  const [retry, setRetry] = useState(0)
+  const [danmu, setDanmu] = useState(true)
+  const [settings, setSettings] = useState(false)
+  const [speed, setSpeed] = useState(1)
+  const [captions, setCaptions] = useState(false)
+  const [pipAvailable, setPipAvailable] = useState(false)
+  const [danmakuSettings, setDanmakuSettings] = useState({
+    speed: 1,
+    font: 17,
+    opacity: 0.85,
+    density: 8,
+  })
+
   const embedded = source.kind === "youtube" || source.kind === "twitch"
   const play = () => {
     const v = videoRef.current
     if (!v || locked) return
     v.play().catch(() => {
+      // 自动播放被浏览器拦截时，让用户手动点播放。
       setStatus("blocked")
       setError(t("点击播放开始观看", "Click play to start watching"))
     })
@@ -118,20 +125,21 @@ export function Player({
   }, [])
   // biome-ignore lint/correctness/useExhaustiveDependencies: retry intentionally rebuilds the media instance.
   useEffect(() => {
-    if (embedded || source.kind === "webrtc") return
+    // iframe 由第三方管理；HLS 和 WebRTC 共用 video 事件、控件与清理生命周期。
+    if (embedded) return
     const video = videoRef.current
     if (!video) return
     setPipAvailable(Boolean(document.pictureInPictureEnabled))
-    // live 是当前 effect 是否仍有效的标记，不是 source.live 的“直播/点播”含义。
-    let live = true,
-      seenFrame = false,
-      stallStart = 0,
-      seeking = false,
-      retries = 0,
-      frame = 0
+    let isCurrentPlayback = true
+    let seenFrame = false
+    let stallStart = 0
+    let seeking = false
+    let retries = 0
+    let frame = 0
     const timers = new Set<ReturnType<typeof setTimeout>>()
-    const started = performance.now(),
-      session = crypto.randomUUID()
+    let rtc: ReturnType<typeof createMediaSession> | undefined
+    const started = performance.now()
+    const session = crypto.randomUUID()
     playerResources.instances++
     metrics.current = { ...initial, events: [] }
     setStatus("loading")
@@ -139,6 +147,7 @@ export function Player({
     setQuality(-1)
     setLevels([])
     const save = () => {
+      // 只把最近 30 次诊断数据保存在当前浏览器；录制视频由 MediaMTX 写磁盘，和这里无关。
       try {
         const old = JSON.parse(
           localStorage.getItem("streamlab-playback") ?? "[]",
@@ -159,9 +168,9 @@ export function Player({
         )
       } catch {}
     }
-    // 首帧从播放器实例初始化计时；优先视频帧回调，不支持时用 playing 近似。它不等于完整页面起播耗时。
+    // 从实例创建计到首帧；不支持帧回调时，用 playing 事件近似。
     const first = () => {
-      if (seenFrame || !live) return
+      if (seenFrame || !isCurrentPlayback) return
       seenFrame = true
       metrics.current.startupMs = Math.round(performance.now() - started)
       emit("first_frame", metrics.current.startupMs)
@@ -184,7 +193,7 @@ export function Player({
       }
       emit("playing")
     }
-    // 只在首帧后、非主动暂停、非 seek 时计卡顿，并去重连续 waiting；初始加载不算播放中卡顿。
+    // 初次加载、主动暂停和拖进度条不计入卡顿；连续 waiting 只记一次。
     const waiting = () => {
       if (seenFrame && !video.paused && !seeking && !stallStart) {
         stallStart = performance.now()
@@ -239,29 +248,56 @@ export function Player({
       ended,
       error: mediaError,
     }
+    // 界面状态跟随媒体事件，不能拿请求成功代替播放成功。
     for (const [name, fn] of Object.entries(handlers))
       video.addEventListener(name, fn)
     if ("requestVideoFrameCallback" in video)
       frame = video.requestVideoFrameCallback(first)
-    // 实际选择顺序：普通文件 → hls.js/MSE → 原生 HLS。解码由浏览器完成，hls.js 处理清单、分片和 ABR。
-    if (source.kind === "file") {
+
+    if (source.kind === "webrtc") {
+      // 观看只接收远端流，不申请观众的摄像头。
+      rtc = createMediaSession(source.url)
+      rtc.peer.ontrack = (event) => {
+        if (!isCurrentPlayback) return
+
+        video.srcObject = event.streams[0]
+        video.play().catch(() => {
+          if (isCurrentPlayback) setStatus("blocked")
+        })
+      }
+      rtc.peer.onconnectionstatechange = () => {
+        if (isCurrentPlayback && rtc?.peer.connectionState === "failed") {
+          rtc.close()
+          setStatus("error")
+          setError("直播连接已断开，请重新加载 / Live connection lost")
+        }
+      }
+      // 先装好监听，再连接，避免漏掉第一条轨道。
+      void rtc.connect().catch((error) => {
+        if (!isCurrentPlayback) return
+        setStatus("error")
+        setError(error instanceof Error ? error.message : "WebRTC failed")
+      })
+    } else if (source.kind === "file") {
       video.src = source.url
       video.play().catch(() => setStatus("blocked"))
     } else if (Hls.isSupported()) {
-      // lowLatencyMode 需要源支持 LL-HLS 才有意义；开启此开关不会把普通点播改造成低延迟直播。
+      // hls.js 下载清单和分片，交给浏览器解码。低延迟模式需要媒体源也支持 LL-HLS。
       const engine = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
+        // 前后缓冲的目标秒数，不是承诺的直播延迟。
         backBufferLength: 30,
         maxBufferLength: 20,
       })
       hls.current = engine
       playerResources.hls++
       engine.on(Hls.Events.MANIFEST_PARSED, () => {
+        // 可选清晰度来自媒体清单，单码率直播不会凭空多出其他档位。
         setLevels(engine.levels.map((l) => l.height))
         emit("manifest")
         video.play().catch(() => {
-          if (live) {
+          if (isCurrentPlayback) {
             setStatus("blocked")
             setError("点击播放 / Click to play")
           }
@@ -274,6 +310,7 @@ export function Player({
       // 区分网络与媒体错误；这里限两次“应用层 fatal 恢复”，hls.js 内部请求重试不计入这两个次数。
       engine.on(Hls.Events.ERROR, (_, data) => {
         emit(data.fatal ? "fatal_error" : "hls_warning", data.details)
+        // 非致命错误先让 hls.js 自己处理；否则每次小抖动都重建播放，会人为造成更多卡顿。
         if (!data.fatal) return
         if (
           retries++ < 2 &&
@@ -284,7 +321,7 @@ export function Player({
           const timer = setTimeout(
             () => {
               timers.delete(timer)
-              if (!live) return
+              if (!isCurrentPlayback) return
               if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
                 if (
                   // 初始 manifest 失败没有可加载的 level，单调用 startLoad 无法恢复，必须重新 loadSource。
@@ -295,6 +332,7 @@ export function Player({
                 else engine.startLoad()
               } else engine.recoverMediaError()
             },
+            // 本次计数先递增，因此两次恢复分别等待 1 秒、2 秒，避免持续密集重试。
             500 * 2 ** retries,
           )
           timers.add(timer)
@@ -305,19 +343,22 @@ export function Player({
           save()
         }
       })
+      // loadSource 提供媒体清单地址，attachMedia 绑定画面要显示到哪个 <video>。
       engine.loadSource(source.url)
       engine.attachMedia(video)
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      // 不支持 hls.js 所需能力时，再尝试浏览器原生 HLS；这里由浏览器自行加载清单和分片。
       video.src = source.url
       video.play().catch(() => setStatus("blocked"))
     } else {
       setStatus("error")
       setError("HLS is not supported in this browser")
     }
-    // 1 秒汇总一次 QoE，缓冲只取包含 currentTime 的区间；其他不连续区间不能简单相加。
+    // 每秒汇总一次播放指标。
     const tick = setInterval(() => {
-      if (!live) return
+      if (!isCurrentPlayback) return
       let buffer = 0
+      // buffered 可能有多个不连续区间：只能把当前播放位置所在区间的剩余部分算作可用缓冲。
       for (let i = 0; i < video.buffered.length; i++)
         if (
           video.buffered.start(i) <= video.currentTime &&
@@ -337,8 +378,8 @@ export function Player({
     }, 1000)
     emit("load_start", source.url)
     return () => {
-      // 卸载/切源按生命周期释放：阻止旧回调 → 落盘指标 → 清 timer/监听 → destroy HLS → 清 video src。
-      live = false
+      // 切源或离开页面：先让旧回调失效，再清理连接、监听和计时器。
+      isCurrentPlayback = false
       finishStall()
       save()
       clearInterval(tick)
@@ -347,6 +388,9 @@ export function Player({
       for (const [name, fn] of Object.entries(handlers))
         video.removeEventListener(name, fn)
       video.pause()
+      // 只关闭当前观众的连接，主播仍可继续发送。
+      rtc?.close()
+      video.srcObject = null
       if (hls.current) {
         hls.current.destroy()
         hls.current = null
@@ -429,7 +473,7 @@ export function Player({
         ref={videoRef}
         poster={poster}
         playsInline
-        muted={muted}
+        muted={muted || forceMuted}
         className="size-full object-contain"
         onClick={toggle}
         crossOrigin="anonymous"
@@ -517,10 +561,16 @@ export function Player({
             </button>
             <button
               type="button"
+              disabled={forceMuted}
+              title={forceMuted ? "连麦中，请在连麦区收听" : undefined}
               onClick={() => setMuted(!muted)}
               aria-label="Toggle mute"
             >
-              {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+              {muted || forceMuted ? (
+                <VolumeX size={18} />
+              ) : (
+                <Volume2 size={18} />
+              )}
             </button>
             <input
               className="hidden h-1 w-14 sm:block"
@@ -714,17 +764,17 @@ function Danmaku({
   videoRef: React.RefObject<HTMLVideoElement | null>
   messages: ChatMessage[]
 }) {
-  const canvas = useRef<HTMLCanvasElement>(null),
-    latest = useRef(messages)
+  const canvas = useRef<HTMLCanvasElement>(null)
+  const latest = useRef(messages)
   latest.current = messages
   useEffect(() => {
-    const el = canvas.current,
-      video = videoRef.current
+    const el = canvas.current
+    const video = videoRef.current
     if (!el || !video) return
     const ctx = el.getContext("2d")
     if (!ctx) return
-    let raf = 0,
-      lastTime = -1
+    let raf = 0
+    let lastTime = -1
     const seen = new Set<string>()
     let active: {
       text: string
@@ -736,8 +786,8 @@ function Danmaku({
     const lanes = Array(settings.density).fill(-100)
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches
     const draw = () => {
-      const width = el.clientWidth,
-        height = el.clientHeight
+      const width = el.clientWidth
+      const height = el.clientHeight
       if (el.width !== width || el.height !== height) {
         el.width = width
         el.height = height
@@ -760,8 +810,8 @@ function Danmaku({
         if (now < at || now - at > 1.5) continue
         const lane = lanes.findIndex((v) => now >= v)
         if (lane < 0 || active.length >= 40) continue
-        const text = m.text.slice(0, 60),
-          tw = ctx.measureText(text).width
+        const text = m.text.slice(0, 60)
+        const tw = ctx.measureText(text).width
         seen.add(m.id)
         // 同轨弹幕同速：前一条尾部离开入口并留出 50px 后再入轨，避免后一条追上。
         lanes[lane] = now + (tw + 50) / velocity

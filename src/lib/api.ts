@@ -14,3 +14,5 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
 }
 export const getState = () => api<State>("state")
 export const action = (a: Action) => api("action", a)
+export const chatUrl = () =>
+  `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/chat`

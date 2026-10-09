@@ -4,10 +4,11 @@
  */
 import { delay, HttpResponse, http, ws } from "msw"
 import { setupWorker } from "msw/browser"
+import { chatUrl } from "@/lib/api"
 import { mutate, readState, resetState } from "@/lib/db"
 import type { Action, ChatMessage } from "@/lib/types"
 
-const chat = ws.link("ws://localhost:3000/chat")
+const chat = ws.link(chatUrl())
 export const worker = setupWorker(
   http.get("/api/v1/state", async () => HttpResponse.json(await readState())),
   http.get("/api/v1/messages", async ({ request }) => {

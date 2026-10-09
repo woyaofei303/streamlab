@@ -1,0 +1,9 @@
+# Ephemeral GitHub runner only. The production image is tested with local media and fake devices.
+services:
+  media:
+    environment:
+      MTX_HLSALLOWORIGINS: http://localhost:8080
+      MTX_WEBRTCALLOWORIGINS: http://localhost:8080
+  proxy:
+    environment:
+      DOMAIN: http://localhost:8080
