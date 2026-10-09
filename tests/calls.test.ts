@@ -41,7 +41,11 @@ test.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0).each([2, 3, 4])(
       inputs.map((path) => ({ path, audio: false, muted: false })),
       "test",
     )
-    const graph = args[args.indexOf("-filter_complex") + 1]
+    // Keep synthetic sources finite on FFmpeg versions with different output scheduling.
+    const graph = args[args.indexOf("-filter_complex") + 1].replaceAll(
+      "anullsrc=r=48000:cl=stereo",
+      "anullsrc=r=48000:cl=stereo:d=0.2",
+    )
     const result = spawnSync(
       "ffmpeg",
       [
@@ -54,7 +58,7 @@ test.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0).each([2, 3, 4])(
           "-f",
           "lavfi",
           "-i",
-          `color=c=${color}:r=24`,
+          `color=c=${color}:r=24:d=0.2`,
         ]),
         "-filter_complex",
         graph,
