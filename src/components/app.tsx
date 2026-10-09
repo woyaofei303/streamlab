@@ -1,6 +1,6 @@
 "use client"
 
-/** 页面外壳与路由分派：Next optional catch-all 提供统一入口，Shell 依据 pathname 选择页面。 */
+/** 公共外壳驻留根布局；主内容由 optional catch-all 路由切换。 */
 import {
   Bell,
   Compass,
@@ -16,7 +16,7 @@ import {
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useTranslations } from "next-intl"
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { AuthDialog } from "./auth"
 import { ChannelPage, Home } from "./home"
 import { Lab } from "./lab"
@@ -26,31 +26,51 @@ import { Room } from "./room"
 import { Studio } from "./studio"
 import { Avatar, Button, cn, Empty, Modal } from "./ui/primitives"
 
-function Shell() {
-  const {
-      state,
-      user,
-      t,
-      locale,
-      setLocale,
-      setAuthOpen,
-      act,
-      error,
-      refresh,
-    } = useApp(),
+function SearchForm() {
+  const { t } = useApp()
+  const router = useRouter()
+  const query = useSearchParams().get("q") ?? ""
+  const [search, setSearch] = useState(query)
+  useEffect(() => setSearch(query), [query])
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        router.push(`/?q=${encodeURIComponent(search)}`)
+      }}
+      className="hidden w-full max-w-[420px] items-center rounded-lg border border-white/8 bg-white/[.035] sm:flex"
+    >
+      <Search size={17} className="ml-3 text-zinc-500" />
+      <input
+        aria-label={t("搜索", "Search")}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder={t(
+          "搜索直播、频道、感兴趣的事物",
+          "Search streams, creators, and things you love",
+        )}
+        className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-xs outline-none placeholder:text-zinc-500"
+      />
+      <kbd className="mr-3 rounded border border-white/10 px-1 text-[10px] text-zinc-600">
+        ↵
+      </kbd>
+    </form>
+  )
+}
+
+function Shell({ children }: { children: React.ReactNode }) {
+  const { state, user, t, locale, setLocale, setAuthOpen, act } = useApp(),
     nav = useTranslations("nav")
   const pathname = usePathname(),
-    router = useRouter(),
-    searchParams = useSearchParams(),
-    [search, setSearch] = useState(searchParams.get("q") ?? ""),
     [mobile, setMobile] = useState(false),
     [notices, setNotices] = useState(false)
-  const query = searchParams.get("q") ?? ""
-  // URL 是已提交搜索条件的来源；前进、返回、刷新后，把输入框同步回 URL，避免页面条件不一致。
-  useEffect(() => setSearch(query), [query])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the persistent shell closes route-local overlays after navigation.
+  useEffect(() => {
+    setMobile(false)
+    setNotices(false)
+  }, [pathname])
   const isRoom = pathname.startsWith("/live/"),
     current = pathname.split("/")[2]
-  const route = pathname.split("/")[1]
   const links = [
     { href: "/", icon: Compass, label: nav("discover") },
     { href: "/following", icon: Heart, label: nav("following") },
@@ -84,28 +104,9 @@ function Shell() {
             LOCAL DEMO
           </span>
         </div>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            router.push(`/?q=${encodeURIComponent(search)}`)
-          }}
-          className="hidden w-full max-w-[420px] items-center rounded-lg border border-white/8 bg-white/[.035] sm:flex"
-        >
-          <Search size={17} className="ml-3 text-zinc-500" />
-          <input
-            aria-label={t("搜索", "Search")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t(
-              "搜索直播、频道、感兴趣的事物",
-              "Search streams, creators, and things you love",
-            )}
-            className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-xs outline-none placeholder:text-zinc-500"
-          />
-          <kbd className="mr-3 rounded border border-white/10 px-1 text-[10px] text-zinc-600">
-            ↵
-          </kbd>
-        </form>
+        <Suspense>
+          <SearchForm />
+        </Suspense>
         <div className="flex shrink-0 items-center gap-1 sm:gap-3">
           <button
             type="button"
@@ -266,52 +267,7 @@ function Shell() {
         </p>
       </aside>
       <main id="main" className="min-h-dvh pt-16 lg:pl-56">
-        {error ? (
-          <div className="p-8">
-            <Empty
-              title={t("暂时无法加载", "Unable to load")}
-              description={error.message}
-            >
-              <Button onClick={refresh}>{t("重试", "Retry")}</Button>
-            </Empty>
-          </div>
-        ) : !state ? (
-          <div className="space-y-6 p-8">
-            <div className="h-72 animate-pulse rounded-2xl bg-white/5" />
-            <div className="grid grid-cols-3 gap-4">
-              {[1, 2, 3].map((x) => (
-                <div
-                  key={x}
-                  className="h-40 animate-pulse rounded-xl bg-white/5"
-                />
-              ))}
-            </div>
-          </div>
-        ) : route === "live" ? (
-          <Room key={pathname} channelId={current} />
-        ) : route === "channel" ? (
-          <ChannelPage id={current} />
-        ) : route === "library" ? (
-          <Library />
-        ) : route === "studio" ? (
-          <Studio />
-        ) : route === "lab" ? (
-          <Lab />
-        ) : route === "" || route === "following" ? (
-          <Home following={route === "following"} />
-        ) : (
-          <div className="p-8">
-            <Empty
-              title="404"
-              description={t(
-                "这个页面已经离开直播间",
-                "This page is off the air",
-              )}
-            >
-              <Link href="/">{t("回到首页", "Back home")}</Link>
-            </Empty>
-          </div>
-        )}
+        {children}
       </main>
       <AuthDialog />
       <Modal
@@ -344,10 +300,66 @@ function Shell() {
     </div>
   )
 }
-export function StreamApp() {
+export function PageContent() {
+  const { state, error, refresh, t } = useApp()
+  const pathname = usePathname()
+  const [, route, current] = pathname.split("/")
+  return (
+    <>
+      {error ? (
+        <div className="p-8">
+          <Empty
+            title={t("暂时无法加载", "Unable to load")}
+            description={error.message}
+          >
+            <Button onClick={refresh}>{t("重试", "Retry")}</Button>
+          </Empty>
+        </div>
+      ) : !state ? (
+        <div className="space-y-6 p-8">
+          <div className="h-72 animate-pulse rounded-2xl bg-white/5" />
+          <div className="grid grid-cols-3 gap-4">
+            {[1, 2, 3].map((x) => (
+              <div
+                key={x}
+                className="h-40 animate-pulse rounded-xl bg-white/5"
+              />
+            ))}
+          </div>
+        </div>
+      ) : route === "live" ? (
+        <Room key={pathname} channelId={current} />
+      ) : route === "channel" ? (
+        <ChannelPage id={current} />
+      ) : route === "library" ? (
+        <Library />
+      ) : route === "studio" ? (
+        <Studio />
+      ) : route === "lab" ? (
+        <Lab />
+      ) : route === "" || route === "following" ? (
+        <Home following={route === "following"} />
+      ) : (
+        <div className="p-8">
+          <Empty
+            title="404"
+            description={t(
+              "这个页面已经离开直播间",
+              "This page is off the air",
+            )}
+          >
+            <Link href="/">{t("回到首页", "Back home")}</Link>
+          </Empty>
+        </div>
+      )}
+    </>
+  )
+}
+
+export function StreamApp({ children }: { children: React.ReactNode }) {
   return (
     <Providers>
-      <Shell />
+      <Shell>{children}</Shell>
     </Providers>
   )
 }

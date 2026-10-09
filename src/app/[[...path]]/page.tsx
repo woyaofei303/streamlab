@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { Suspense } from "react"
-import { StreamApp } from "@/components/app"
+import { PageContent } from "@/components/app"
 import { createState } from "@/lib/seed"
 import { siteDescription, siteTitle, siteUrl } from "@/lib/seo"
 
@@ -78,10 +78,10 @@ export default async function Page({ params }: Props) {
   return (
     <>
       <Suspense>
-        <StreamApp />
+        <PageContent />
       </Suspense>
       {!path.length && (
-        <footer className="border-t border-white/10 px-6 py-10 text-zinc-400 lg:ml-56 lg:px-9">
+        <footer className="border-t border-white/10 px-6 py-10 text-zinc-400 lg:px-9">
           <div className="mx-auto max-w-5xl">
             <h2 className="text-xl font-semibold text-zinc-100">
               直播学习与互动演示

@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { StreamApp } from "@/components/app"
 import { siteDescription, siteTitle, siteUrl } from "@/lib/seo"
 import "./globals.css"
 export const metadata: Metadata = {
@@ -15,7 +16,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body>
+        <StreamApp>{children}</StreamApp>
+      </body>
     </html>
   )
 }

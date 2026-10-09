@@ -65,7 +65,15 @@ export function useApp() {
   if (!v) throw Error("Missing App provider")
   return v
 }
-function ContextProvider({ children }: { children: React.ReactNode }) {
+function ContextProvider({
+  children,
+  ready,
+  initializationError,
+}: {
+  children: React.ReactNode
+  ready: boolean
+  initializationError: Error | null
+}) {
   const [userId, setUserId] = useState(""),
     [locale, setLocaleState] = useState<Locale>("zh"),
     [authOpen, setAuthOpen] = useState(false),
@@ -74,7 +82,7 @@ function ContextProvider({ children }: { children: React.ReactNode }) {
     data: state,
     error,
     refetch,
-  } = useQuery({ queryKey: ["state"], queryFn: getState })
+  } = useQuery({ queryKey: ["state"], queryFn: getState, enabled: ready })
   const client = useQueryClient()
   // 只保留关注/收藏/预约等低风险动作；登录后不会自动重放购买或送礼。
   const pendingIntent = useRef<Action | null>(null)
@@ -159,7 +167,7 @@ function ContextProvider({ children }: { children: React.ReactNode }) {
         toast: setNotification,
         authOpen,
         setAuthOpen,
-        error,
+        error: error ?? initializationError,
         refresh: () => {
           void refetch()
         },
@@ -185,36 +193,25 @@ function ContextProvider({ children }: { children: React.ReactNode }) {
 }
 export function Providers({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false),
-    [error, setError] = useState("")
+    [error, setError] = useState<Error | null>(null)
   useEffect(() => {
     let live = true
-    // 浏览器业务页等 MSW 初始化后才挂载；服务端只输出外壳，不会向不存在的 /api/v1 服务发请求。
+    // 公共外壳常驻；MSW 就绪后才查询业务数据，避免请求尚未被接管的 API。
     import("@/mocks/browser")
       .then(({ startMocks }) => startMocks())
       .then(() => {
         if (live) setReady(true)
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(e instanceof Error ? e : Error(String(e))))
     return () => {
       live = false
     }
   }, [])
-  if (!ready)
-    return (
-      <div className="grid min-h-dvh place-items-center bg-[#0e0e10]">
-        <div className="text-center">
-          <div className="mb-4 text-2xl font-black tracking-tight text-violet-400">
-            StreamLab<span className="text-white">.</span>
-          </div>
-          <p className="text-sm text-zinc-400">
-            {error || "准备你的直播空间 / Preparing your space…"}
-          </p>
-        </div>
-      </div>
-    )
   return (
     <QueryClientProvider client={queryClient}>
-      <ContextProvider>{children}</ContextProvider>
+      <ContextProvider ready={ready} initializationError={error}>
+        {children}
+      </ContextProvider>
     </QueryClientProvider>
   )
 }
