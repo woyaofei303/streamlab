@@ -119,7 +119,7 @@ curl -fsS https://live.sunshinedairy.net/api/health
 - 添加摄像头、窗口或媒体文件来源，确认预览有画面后点击「开始推流」。
 - 观看：`https://live.sunshinedairy.net/live/mei?source=local`。
 
-网页开播在 `/studio` 选择 MEI 演示身份，输入同一推流密码。跨设备观众使用 `/live/mei?source=browser`；演示身份并不授予推流权限。
+网页开播为公开演示：任何访客在 `/studio` 选择 MEI 演示身份，即可点击「网页开播」，无需输入账号或推流密码。Next.js 的 `/api/media/publish` 仅代理 `browser` 的发布与会话清理，并在服务器端使用运行时 `PUBLISH_PASSWORD`；密码不会发送给网页。生产缺少该配置会返回 503，本地开发可沿用匿名媒体服务。跨设备观众使用 `/live/mei?source=browser`。同一时间只允许一路网页直播，已有主播需先停播；OBS、RTC 实验室及连麦房主操作仍需原有推流密码。
 
 RTMP 未加密，推流密码不要复用其他账号密码；如需加密发布，可用网页的 HTTPS WHIP 入口。WebRTC 使用服务器公网 IP 直连，严格限制 UDP/TCP 的网络仍可能需要 TURN 中继。
 

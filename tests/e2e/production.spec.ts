@@ -32,7 +32,7 @@ test("the production image receives RTMP and serves decodable HLS", async ({
     .toBeGreaterThan(0)
 })
 
-test("browser publishing authenticates, reaches a viewer and stops", async ({
+test("browser publishing needs no password, reaches a viewer and stops", async ({
   page,
   context,
   request,
@@ -42,9 +42,7 @@ test("browser publishing authenticates, reaches a viewer and stops", async ({
   )
   await page.goto("/studio")
   await page.getByRole("button", { name: "设备预览", exact: true }).click()
-  await page
-    .getByLabel("推流密码（仅主播需要）")
-    .fill(process.env.STREAMLAB_TEST_PASSWORD || "")
+  await expect(page.getByLabel("推流密码（仅主播需要）")).toHaveCount(0)
   try {
     await page.getByRole("button", { name: "网页开播", exact: true }).click()
     await expect(page.getByTestId("broadcast-status")).toHaveText("网页直播中")

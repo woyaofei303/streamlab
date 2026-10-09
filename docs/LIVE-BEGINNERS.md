@@ -71,10 +71,12 @@ B. OBS / FFmpeg 直播：通过 live 路径传输，并录制
 OBS / FFmpeg → RTMP :1935/live → MediaMTX → HLS :8888/live/index.m3u8 → video
 
 C. 网页直播：通过 browser 路径传输，当前不录制
-主播浏览器 → WHIP :8889/browser/whip → MediaMTX
+主播浏览器 → /api/media/publish → WHIP :8889/browser/whip → MediaMTX
 观众浏览器 ← WHEP :8889/browser/whep ← MediaMTX
 WHIP/WHEP 用 HTTP 协商；媒体本身走 WebRTC，本地开放 :8189 UDP/TCP。
 ```
+
+网页开播是公开演示，无需填写推流密码；生产由 Next.js 后台添加认证，本地开发沿用匿名媒体服务。OBS 推流和连麦管理仍按原有方式认证。
 
 `live`、`browser` 是媒体服务里的流名，不是前端页面地址，也不是用户密码。两条流相互独立：开了网页直播，去查看 `live/index.m3u8` 不能证明网页直播是否正常。
 
@@ -190,8 +192,8 @@ browser-broadcast.tsx / startBroadcast()
   1. 防重复点击，为这一次发布生成 broadcastId
   2. 查询 browser 输入：媒体服务是否启动，是否已有发布者
   3. 复用预览流；没有预览时调用 getUserMedia
-  4. createMediaSession(WHIP 地址, 本机 MediaStream)
-     → 添加轨道 → SDP/ICE 协商 → 等待 connected
+  4. createMediaSession("/api/media/publish", 本机 MediaStream)
+     → 添加轨道 → 后台认证并转发 WHIP 协商 → 等待 connected
   5. 查询真实输入：ready + webRTCSession + bytesReceived > 0
   6. act({ type: "start", broadcastId }) 更新模拟场次
      → providers/api → MSW → domain/db → IndexedDB

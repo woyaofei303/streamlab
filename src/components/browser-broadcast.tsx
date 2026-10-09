@@ -4,7 +4,7 @@ import { Camera, Mic, MonitorUp, Radio, Square, Video } from "lucide-react"
 import Link from "next/link"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { action } from "@/lib/api"
-import { captureCamera, isPublicMedia, webrtcBase } from "@/lib/media-config"
+import { captureCamera, isPublicMedia } from "@/lib/media-config"
 import { createMediaSession } from "@/lib/media-session"
 import type { Channel } from "@/lib/types"
 import { useApp } from "./providers"
@@ -29,7 +29,6 @@ export function BrowserBroadcast({ channel }: { channel: Channel }) {
   const [hasPreview, setHasPreview] = useState(false)
   const [isMicrophoneMuted, setMicrophoneMuted] = useState(false)
   const [status, setStatus] = useState<BroadcastStatus>("idle")
-  const [publishPassword, setPublishPassword] = useState("")
 
   const previewRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -151,11 +150,7 @@ export function BrowserBroadcast({ channel }: { channel: Channel }) {
       captured.getVideoTracks()[0].onended = () => {
         void stopBroadcast()
       }
-      const session = createMediaSession(
-        `${webrtcBase}/browser/whip`,
-        captured,
-        publishPassword,
-      )
+      const session = createMediaSession("/api/media/publish", captured)
       broadcast.session = session
       session.peer.onconnectionstatechange = () => {
         if (publicationRef.current !== broadcast) return
@@ -281,19 +276,6 @@ export function BrowserBroadcast({ channel }: { channel: Channel }) {
   const isBusy = status !== "idle"
   return (
     <div>
-      {isPublicMedia && (
-        <label className="mb-4 block text-xs text-zinc-400">
-          {t("推流密码（仅主播需要）", "Publish password (creators only)")}
-          <input
-            type="password"
-            autoComplete="off"
-            value={publishPassword}
-            disabled={isBusy}
-            onChange={(event) => setPublishPassword(event.target.value)}
-            className={`${inputClass} mt-2`}
-          />
-        </label>
-      )}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-400/20 bg-violet-500/5 p-4">
         <div>
           <p
@@ -305,8 +287,8 @@ export function BrowserBroadcast({ channel }: { channel: Channel }) {
           </p>
           <p className="mt-1 text-xs text-zinc-400">
             {t(
-              "直接使用摄像头开播，或先预览并选择屏幕；离开主播页会停播。",
-              "Go live with your camera, or preview a screen first. Leaving the studio stops the broadcast.",
+              "公开演示，无需推流密码。直接使用摄像头开播，或先预览并选择屏幕；离开主播页会停播。",
+              "Public demo, no publish password needed. Go live with your camera, or preview a screen first. Leaving the studio stops the broadcast.",
             )}
           </p>
         </div>

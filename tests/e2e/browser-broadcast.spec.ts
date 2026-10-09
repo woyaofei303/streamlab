@@ -161,6 +161,7 @@ test("a rejected publishing request releases capture and does not mark the room 
     sessionStorage.setItem("streamlab-user", "creator"),
   )
   await page.goto("/studio")
+  await expect(page.getByLabel("推流密码（仅主播需要）")).toHaveCount(0)
   await expect(
     page.getByRole("button", { name: "网页开播", exact: true }),
   ).toBeVisible()
@@ -173,7 +174,7 @@ test("a rejected publishing request releases capture and does not mark the room 
       )
       if (url.pathname === "/api/media/status")
         return Response.json({ online: true, ready: false })
-      if (url.pathname === "/browser/whip")
+      if (url.pathname === "/api/media/publish")
         return new Response("Injected service failure", { status: 503 })
       return original(input, init)
     }
