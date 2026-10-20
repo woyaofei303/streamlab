@@ -1,20 +1,29 @@
-name: CI
+name: CI & Production
 
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      operation:
+        description: 检查并发布 main，或回滚上一成功版本（直播中会拒绝）
+        type: choice
+        required: true
+        default: deploy
+        options: [deploy, rollback]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.ref == 'refs/heads/main' && 'streamlab-production' || format('streamlab-ci-{0}', github.ref) }}
+  cancel-in-progress: false
 
 jobs:
   verify:
+    name: CI
+    if: inputs.operation != 'rollback'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -78,19 +87,19 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: failed-browser-${{ github.run_id }}
+          name: failed-browser-${{ github.run_id }}-${{ github.run_attempt }}
           path: output-tdd/playwright/ci
           retention-days: 7
           if-no-files-found: ignore
       - name: Login for trusted main builds only
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish the tested image and configuration
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy'
         run: |
           docker push "$IMAGE"
           reference=$(docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}')
@@ -98,7 +107,7 @@ jobs:
           python3 deploy/package-release.py verify "$GITHUB_SHA" - output-tdd/release
           printf '### Tested release\n\nCommit: `%s`\n\nImage: `%s`\n' "$GITHUB_SHA" "$reference" >> "$GITHUB_STEP_SUMMARY"
       - name: Save immutable release bundle
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-${{ github.sha }}
@@ -107,3 +116,59 @@ jobs:
             output-tdd/release/release.json
           retention-days: 14
           if-no-files-found: error
+          overwrite: true
+
+  deploy:
+    name: ${{ inputs.operation == 'rollback' && 'Rollback' || 'Deploy' }}
+    needs: verify
+    if: >-
+      !cancelled() && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' &&
+      ((inputs.operation == 'rollback' && needs.verify.result == 'skipped') ||
+       (inputs.operation == 'deploy' && needs.verify.result == 'success'))
+    environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Download this run's verified release
+        if: inputs.operation == 'deploy'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-${{ github.sha }}
+          path: output-tdd/release
+      - name: Verify the release matches this commit
+        if: inputs.operation == 'deploy'
+        run: python3 deploy/package-release.py verify "$GITHUB_SHA" - output-tdd/release
+      - name: Deploy or rollback using the restricted server entry point
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          task_ssh_dir=$(mktemp -d)
+          trap 'rm -rf -- "$task_ssh_dir"' EXIT
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$task_ssh_dir/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$task_ssh_dir/known_hosts"
+          chmod 600 "$task_ssh_dir/key" "$task_ssh_dir/known_hosts"
+          ssh_options=(-T -i "$task_ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$task_ssh_dir/known_hosts" -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=8)
+          if [[ "$OPERATION" == deploy ]]; then
+            checksum=$(python3 deploy/package-release.py verify "$GITHUB_SHA" - output-tdd/release)
+          fi
+          set +e
+          if [[ "$OPERATION" == deploy ]]; then
+            ssh "${ssh_options[@]}" "streamlab-deploy@$DEPLOY_HOST" "deploy $GITHUB_SHA $checksum" < output-tdd/release/release.tgz > output-tdd/deploy.log 2>&1
+          else
+            mkdir -p output-tdd
+            ssh "${ssh_options[@]}" "streamlab-deploy@$DEPLOY_HOST" rollback </dev/null > output-tdd/deploy.log 2>&1
+          fi
+          result=$?
+          cat output-tdd/deploy.log
+          printf '### Production %s\n\nCommit: `%s`\n\nExit code: `%s`\n\n```text\n' "$OPERATION" "$GITHUB_SHA" "$result" >> "$GITHUB_STEP_SUMMARY"
+          cat output-tdd/deploy.log >> "$GITHUB_STEP_SUMMARY"
+          printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
+          exit "$result"

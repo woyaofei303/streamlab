@@ -95,6 +95,32 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(self.host.updated, [["web"], ["web"]])
         self.assertEqual(self.manager.state()["current"], self.old.name)
 
+    def test_external_sites_survive_deploy_rollback_and_failed_deploy(self):
+        extra = "\ndy.example.com { reverse_proxy 127.0.0.1:8088 }\n"
+        (self.root / "shared/extra-sites.caddy").write_text(extra)
+        validated = []
+        original = self.host.run
+        def capture_config(args, env=None):
+            if "validate" in args:
+                path = Path(args[args.index("-v") + 1].split(":")[0])
+                validated.append(path.read_text())
+            return original(args, env)
+        self.manager.run = capture_config
+        self.manager.apply(self.new)
+        self.assertIn("proxy", self.host.updated[0])
+        self.assertTrue(validated)
+        self.assertTrue(all(extra.strip() in config for config in validated))
+        expected = "caddy config\n" + extra
+        self.assertEqual((self.root / "shared/config/Caddyfile").read_text(), expected)
+        self.manager.rollback()
+        self.assertEqual((self.root / "shared/config/Caddyfile").read_text(), expected)
+        (self.new / "Caddyfile").write_text("new proxy config")
+        self.host.bad_revision = "b" * 40
+        with self.assertRaisesRegex(deploy.DeployError, "ROLLED_BACK"):
+            self.manager.apply(self.new)
+        self.assertEqual((self.root / "shared/config/Caddyfile").read_text(), expected)
+        self.assertEqual((self.old / "Caddyfile").read_text(), "caddy config")
+
     def test_failed_readiness_restores_images_and_configuration(self):
         (self.new / "mediamtx.yml").write_text("new media config")
         self.host.bad_revision = "b" * 40

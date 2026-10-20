@@ -142,12 +142,20 @@ class Deployment:
             raise DeployError("Unexpected Compose project or services")
         return config
 
+    def config_content(self, release, name):
+        content = (release / name).read_bytes()
+        extra = self.root / "shared/extra-sites.caddy"
+        if name == "Caddyfile" and extra.exists():
+            content += b"\n" + extra.read_bytes()
+        return content
+
     def install_config(self, release):
         for name in ("Caddyfile", "mediamtx.yml"):
             target = self.root / "shared/config" / name
-            if not target.exists() or target.read_bytes() != (release / name).read_bytes():
+            content = self.config_content(release, name)
+            if not target.exists() or target.read_bytes() != content:
                 temporary = target.with_suffix(".tmp")
-                shutil.copyfile(release / name, temporary)
+                temporary.write_bytes(content)
                 temporary.replace(target)
 
     def changed(self, old, new):
@@ -156,15 +164,21 @@ class Deployment:
         for name, service in (("Caddyfile", "proxy"), ("mediamtx.yml", "media")):
             if (old / name).read_bytes() != (new / name).read_bytes():
                 changed.add(service)
+        current_proxy = self.root / "shared/config/Caddyfile"
+        if not current_proxy.exists() or current_proxy.read_bytes() != self.config_content(new, "Caddyfile"):
+            changed.add("proxy")
         return [name for name in ("media", "web", "proxy") if name in changed]
 
     def validate(self, release, services):
         config = self.config(release)["services"]
         if "proxy" in services:
-            self.run(["docker", "run", "--rm", "--network", "none", "-e", "DOMAIN",
-                      "-v", f"{release / 'Caddyfile'}:/etc/caddy/Caddyfile:ro",
-                      config["proxy"]["image"], "caddy", "validate", "--config", "/etc/caddy/Caddyfile"],
-                     env={**os.environ, "DOMAIN": config["proxy"]["environment"]["DOMAIN"]})
+            with tempfile.TemporaryDirectory(dir=self.root) as directory:
+                candidate = Path(directory) / "Caddyfile"
+                candidate.write_bytes(self.config_content(release, "Caddyfile"))
+                self.run(["docker", "run", "--rm", "--network", "none", "-e", "DOMAIN",
+                          "-v", f"{candidate}:/etc/caddy/Caddyfile:ro",
+                          config["proxy"]["image"], "caddy", "validate", "--config", "/etc/caddy/Caddyfile"],
+                         env={**os.environ, "DOMAIN": config["proxy"]["environment"]["DOMAIN"]})
         if "media" in services:
             name = "streamlab-config-check-" + uuid.uuid4().hex
             environment = config["media"].get("environment", {})

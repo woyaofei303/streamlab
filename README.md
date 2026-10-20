@@ -223,7 +223,7 @@ STREAMLAB_BROWSER_TEST=1 pnpm exec playwright test tests/e2e/browser-broadcast.s
 
 Husky hook：对暂存源码执行 Biome 格式化与 lint，再跑类型检查、逻辑测试和部署故障测试（需要 Python 3）；不自动提交。浏览器报告、截图和 trace 存于 `output-tdd/playwright/streamlab/`（本地忽略）。
 
-生产采用 GitHub Actions → 公开 GHCR → SSH → Docker Compose。CI 验证生产镜像及隔离媒体；停播后在 **Actions → Production** 一键发布或回滚。首次接入、凭证、日志和恢复命令见 [生产部署说明](docs/DEPLOYMENT.md)。本地开发沿用 `pnpm dev`，不用生产密码。
+生产采用 GitHub Actions → 公开 GHCR → SSH → Docker Compose。推送只跑 CI；停播后在 **Actions → CI & Production** 选择 `deploy`，本次 CI 全部通过后发布同一份镜像；选择 `rollback` 恢复上一成功版本。首次接入、凭证、共享代理配置和恢复命令见 [生产部署说明](docs/DEPLOYMENT.md)。本地开发沿用 `pnpm dev`，不用生产密码。
 
 ## 怎么读这个项目
 

@@ -7,15 +7,17 @@ Linux 服务器运行 Next.js、MediaMTX 和 Caddy。浏览器通过 HTTPS 访�
 ## 日常发布与回滚
 
 1. 将修改提交并推送至 `main`。PR 也运行检查，但不发布镜像、不接触生产 SSH 凭证。
-2. 等待 **CI** 通过：冻结锁文件安装、Biome、类型检查、单元测试、部署故障测试、生产镜像构建、SEO 和隔离媒体测试。媒体测试使用临时密码、合成 OBS 视频、假摄像头和四人合流，不访问生产媒体服务。
-3. 停止 OBS / 网页推流并关闭连麦。打开 GitHub **Actions → Production → Run workflow**，分支选 `main`，操作选 `deploy`。
+2. 推送只执行 **CI & Production** 中的 CI，不自动部署。检查包括冻结锁文件安装、Biome、类型检查、单元测试、部署故障测试、生产镜像构建、SEO 和隔离媒体测试。媒体测试使用临时密码、合成 OBS 视频、假摄像头和四人合流，不访问生产媒体服务。
+3. 停止 OBS / 网页推流并关闭连麦。打开 GitHub **Actions → CI & Production → Run workflow**，分支选 `main`，操作选 `deploy`。这次运行会重新执行 CI；只有全部通过，Deploy 任务才下载本次运行的产物并发布，无需切换工作流再点一次。
 4. 查看运行摘要中的提交 SHA、更新服务和健康结果。需回退时重新运行，操作选 `rollback`，恢复上一成功版本。
 
-工作流固定点击时的 SHA，只接收该 SHA 成功 CI 的发布包；不直接在服务器拉取 Git 分支。通过测试的同一个镜像推到 `ghcr.io/woyaofei303/streamlab`，生产按 digest 下载，配置包校验 SHA-256。发布包在 Actions 保留 14 天；过期后重新运行该提交的 CI。
+工作流统一在 `.github/workflows/ci.yml`，原 `deploy.yml` 已合并移除。Deploy 使用 `needs: verify` 等待 CI 成功；检查或构建失败时不会上线。工作流固定点击时的 SHA，只接收本次成功 CI 的发布包；不直接在服务器拉取 Git 分支。通过测试的同一个镜像推到 `ghcr.io/woyaofei303/streamlab`，生产按 digest 下载，配置包校验 SHA-256。发布包在 Actions 保留 14 天；过期后重新运行整个工作流。
+
+选择 `rollback` 会跳过当前代码的 CI 和构建，直接恢复服务器记录的上一成功版本，因此当前代码 CI 失败也不妨碍回滚。回滚仍执行直播保护和健康检查。两个选项都只允许 `main`，生产密钥只提供给发布任务。
 
 部署开始及切换前各查询一次 MediaMTX 和连麦状态；任何推流、开放的连麦房间或查询失败都会中止。下载、校验完成前不改现网；仅重建发生变化的服务。网站单独更新不重启媒体或代理。首次迁移因固定镜像和配置挂载路径，会重建三个服务。
 
-GitHub 同一时间只运行一个生产任务，服务器另有文件锁；不要取消切换中的任务。新服务启动、健康或 HTTPS 验证失败时自动恢复旧镜像及配置。发布切换期间必须保持停播；单机短暂维护、媒体重连和已结束的连麦无法通过回滚消除。
+GitHub 同一时间只运行一个 `main` 流程，服务器另有文件锁；发布与回滚排队执行，不要取消切换中的任务。不要连续提交多个手动请求：GitHub 只保留一个等待项，新的等待请求可能替换旧请求。新服务启动、健康或 HTTPS 验证失败时自动恢复旧镜像及配置。发布切换期间必须保持停播；单机短暂维护、媒体重连和已结束的连麦无法通过回滚消除。
 
 ## 首次接入现有服务器
 
@@ -53,7 +55,7 @@ GitHub 同一时间只运行一个生产任务，服务器另有文件锁；不�
 
    用严格主机校验测试专用密钥：执行未授权命令应返回 `Only deploy and rollback are allowed`，退出码 1；认证失败或主机指纹错误必须先处理。不要将此凭证配置到 PR 工作流，也不要关闭主机校验。
 
-5. 首次推送后，等 CI 发布镜像，在 GitHub 包 **streamlab → Package settings → Change visibility** 显式设为 **Public**。仓库公开不保证新包自动公开。在服务器使用临时空 Docker 配置执行匿名拉取，将下方 digest 替换为 CI 摘要的值：
+5. 首次手动运行 `deploy` 并通过 CI 发布镜像后，在 GitHub 包 **streamlab → Package settings → Change visibility** 显式设为 **Public**。仓库公开不保证新包自动公开。在服务器使用临时空 Docker 配置执行匿名拉取，将下方 digest 替换为 CI 摘要的值：
 
    ```bash
    task_docker_config=$(mktemp -d)
@@ -73,6 +75,7 @@ GitHub 同一时间只运行一个生产任务，服务器另有文件锁；不�
   releases/bootstrap/              首次迁移前的服务配置与本地镜像标签
   shared/runtime.env               DOMAIN、PUBLIC_IP、PUBLISH_PASSWORD（0600）
   shared/config/                   当前 Caddyfile 与 mediamtx.yml，稳定挂载路径
+  shared/extra-sites.caddy          管理员维护的其他站点片段，不随应用版本回滚
   state.json                       当前、上一版本、最近三个成功版本
   pending.json                     切换中的恢复记录；成功或自动回滚后移除
   backups/<时间>/source.tar.gz       迁移前源码与配置，含秘密，仅管理员可读
@@ -84,6 +87,30 @@ GitHub 同一时间只运行一个生产任务，服务器另有文件锁；不�
 保留最近三个成功版本，并始终保留 `bootstrap`；旧应用镜像只尝试按精确引用删除，不运行全局 prune 或 `down -v`。继续使用 `streamlab_recordings`、`streamlab_caddy_data`、`streamlab_caddy_config`，保留录制和证书。源码备份不是卷备份或异地备份；重要录制仍需下载保存。
 
 Caddy 继续自动申请和续期 HTTPS 证书。本配置使用 Linux host 网络；本地开发继续使用 `media/compose.yml` 和 `pnpm dev`，无需生产凭证。
+
+### 同机 Douyin 演示站
+
+`dy.sunshinedairy.net` 使用独立的 `douyin` 容器、`/srv/douyin` 目录和回环端口
+`8088`。它和 Streamlab 共用 Caddy 的公网 80/443，因此不能只在当前 Caddyfile
+末尾追加一次配置：下次应用发布可能重写该文件。
+
+管理员把以下片段保存在 `/home/admin/streamlab/shared/extra-sites.caddy`，
+文件由 root 持有。发布程序会将它追加到目标版本的 Caddyfile，先验证合并后的配置，
+再安装；正常发布、回滚、失败恢复都保留该片段，原版本包和校验值保持不变。
+额外配置变化也会触发代理更新，避免文件更新而容器仍读取旧挂载。配置不合法时拒绝发布。
+
+```caddyfile
+dy.sunshinedairy.net {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8088
+}
+```
+
+已初始化的服务器还需要管理员备份并升级 `/usr/local/lib/streamlab/deploy.py`；
+只推送应用代码不会升级这个受限 SSH 入口。该入口升级及额外配置初次落盘本身不重启
+容器。后续修改片段后，在停播时手动发布，让配置验证和健康检查完整执行。
+额外站点仍共享代理进程；如果 Streamlab 更新了代理配置或镜像，代理重建期间两个站点
+都可能短暂受影响。
 
 ## 发布失败与人工恢复
 
