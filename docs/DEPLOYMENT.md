@@ -1,5 +1,7 @@
 # 单机公网部署
 
+想先理解整体流程和首次安装，可读 [CI/CD 从 0 到 1 学习指南](CICD-LEARNING.md)。
+
 Linux 服务器运行 Next.js、MediaMTX 和 Caddy。浏览器通过 HTTPS 访问网站及 HLS/WHIP/WHEP；OBS 使用 RTMP 推流。账号、聊天和交易仍为浏览器本地演示数据，不跨设备同步。
 
 生产使用 GitHub Actions 构建，服务器只下载并运行镜像。继续使用现有 Ubuntu x86_64 服务器、`/home/admin/streamlab` 和 Compose 项目名 `streamlab`；不在服务器构建。已有 2 GB 交换内存可保留。
