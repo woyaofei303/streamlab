@@ -6,7 +6,7 @@ Linux 服务器运行 Next.js、MediaMTX 和 Caddy。浏览器通过 HTTPS 访�
 
 ## 日常发布与回滚
 
-1. 将修改提交并推送至 `main`。PR 也运行检查，但不发布镜像、不接触生产 SSH 凭证。
+1. 将修改提交并推送至 `main`。PR 也运行检查，但不发布镜像、不接触生产 SSH 凭证。`main` 的 CI 保留已验证镜像和发布包，供首次安装使用；上传镜像不等于部署服务器。
 2. 推送只执行 **CI & Production** 中的 CI，不自动部署。检查包括冻结锁文件安装、Biome、类型检查、单元测试、部署故障测试、生产镜像构建、SEO 和隔离媒体测试。媒体测试使用临时密码、合成 OBS 视频、假摄像头和四人合流，不访问生产媒体服务。
 3. 停止 OBS / 网页推流并关闭连麦。打开 GitHub **Actions → CI & Production → Run workflow**，分支选 `main`，操作选 `deploy`。这次运行会重新执行 CI；只有全部通过，Deploy 任务才下载本次运行的产物并发布，无需切换工作流再点一次。
 4. 查看运行摘要中的提交 SHA、更新服务和健康结果。需回退时重新运行，操作选 `rollback`，恢复上一成功版本。
@@ -55,7 +55,7 @@ GitHub 同一时间只运行一个 `main` 流程，服务器另有文件锁；�
 
    用严格主机校验测试专用密钥：执行未授权命令应返回 `Only deploy and rollback are allowed`，退出码 1；认证失败或主机指纹错误必须先处理。不要将此凭证配置到 PR 工作流，也不要关闭主机校验。
 
-5. 首次手动运行 `deploy` 并通过 CI 发布镜像后，在 GitHub 包 **streamlab → Package settings → Change visibility** 显式设为 **Public**。仓库公开不保证新包自动公开。在服务器使用临时空 Docker 配置执行匿名拉取，将下方 digest 替换为 CI 摘要的值：
+5. 首次推送并通过 CI 发布镜像后，在 GitHub 包 **streamlab → Package settings → Change visibility** 显式设为 **Public**。仓库公开不保证新包自动公开。在服务器使用临时空 Docker 配置执行匿名拉取，将下方 digest 替换为 CI 摘要的值：
 
    ```bash
    task_docker_config=$(mktemp -d)

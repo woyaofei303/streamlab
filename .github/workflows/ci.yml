@@ -92,14 +92,14 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
       - name: Login for trusted main builds only
-        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish the tested image and configuration
-        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: |
           docker push "$IMAGE"
           reference=$(docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}')
@@ -107,7 +107,7 @@ jobs:
           python3 deploy/package-release.py verify "$GITHUB_SHA" - output-tdd/release
           printf '### Tested release\n\nCommit: `%s`\n\nImage: `%s`\n' "$GITHUB_SHA" "$reference" >> "$GITHUB_STEP_SUMMARY"
       - name: Save immutable release bundle
-        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-${{ github.sha }}
