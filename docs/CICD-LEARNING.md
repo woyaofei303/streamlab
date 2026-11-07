@@ -389,7 +389,7 @@ sudo streamlab-deploy recover
 - Biome、TypeScript 检查通过；43 个单元测试通过、2 个条件测试跳过；14 个 Python 部署测试通过。
 - CI 中 3 个生产镜像媒体用例及 SEO 检查通过，覆盖 RTMP/HLS、浏览器发布和四人合流。
 - 管理员入口升级前后四个现有容器启动时间相同；本次应用发布记录只更新 Web 服务。
-- 发布、回滚和恢复期间再次检查，`dy.fameex-testnet.xyz` 继续返回正确版本。
+- 发布、回滚和恢复期间再次检查，当时的 `dy.sunshinedairy.net` 继续返回正确版本；该域名已于 2026-11-07 迁移到 `dy.fameex-testnet.xyz`。
 - 旧管理员入口与 Caddyfile 备份在 `/root/douyin-deploy-backups/20261020/streamlab-entrypoint/`。
 
 没有在生产主动开播来制造阻断条件；直播拒绝、故障恢复和额外站点保留由部署测试覆盖，媒体测试运行在 CI 的隔离容器。没有进行空白主机重装、真实并发容量测试或主机灾难恢复演练。

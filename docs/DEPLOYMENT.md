@@ -4,7 +4,7 @@
 
 Linux 服务器运行 Next.js、MediaMTX 和 Caddy。浏览器通过 HTTPS 访问网站及 HLS/WHIP/WHEP；OBS 使用 RTMP 推流。账号、聊天和交易仍为浏览器本地演示数据，不跨设备同步。
 
-生产使用 GitHub Actions 构建，服务器只下载并运行镜像。继续使用现有 Ubuntu x86_64 服务器、`/home/admin/streamlab` 和 Compose 项目名 `streamlab`；不在服务器构建。已有 2 GB 交换内存可保留。
+日常发布使用 GitHub Actions 构建，服务器只下载并运行镜像。继续使用现有 Ubuntu x86_64 服务器、`/home/admin/streamlab` 和 Compose 项目名 `streamlab`；不在服务器编译源码。已有 2 GB 交换内存可保留。
 
 2026-11-07 已迁移到 `live.fameex-testnet.xyz`。OBS 的服务器地址也需改为 `rtmp://live.fameex-testnet.xyz:1935`，推流密码不变。浏览器按域名隔离本地数据，新地址不会自动读取旧域名的演示账户与偏好。
 
