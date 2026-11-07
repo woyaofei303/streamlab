@@ -60,7 +60,7 @@ jobs:
           platforms: linux/amd64
           tags: ${{ env.IMAGE }}
           build-args: |
-            NEXT_PUBLIC_MEDIA_HOST=live.sunshinedairy.net
+            NEXT_PUBLIC_MEDIA_HOST=live.fameex-testnet.xyz
             APP_REVISION=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=min
@@ -125,7 +125,9 @@ jobs:
       !cancelled() && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' &&
       ((inputs.operation == 'rollback' && needs.verify.result == 'skipped') ||
        (inputs.operation == 'deploy' && needs.verify.result == 'success'))
-    environment: production
+    environment:
+      name: production
+      url: https://live.fameex-testnet.xyz
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 
 const base = process.argv[2] || "http://127.0.0.1:3000"
-const origin = "https://live.sunshinedairy.net"
+const origin = "https://live.fameex-testnet.xyz"
 const response = await fetch(base, { signal: AbortSignal.timeout(15000) })
 assert.equal(response.status, 200)
 const html = await response.text()

@@ -2,7 +2,7 @@
 
 用一次真实的修改理解这套流程：调整直播间页面，推送到 GitHub，先验证生产镜像能播放媒体；停播后手动上线。如果新服务不健康，恢复旧镜像和配置，同时保留录制、证书和同机的 Douyin 站点。
 
-本文包括空白服务器首次安装、已有服务器接入、日常发布、回滚及面试表达。操作速查见 [生产部署说明](DEPLOYMENT.md)。实际线上环境是 Ubuntu 24.04、x86_64，域名为 `live.sunshinedairy.net`。
+本文包括空白服务器首次安装、已有服务器接入、日常发布、回滚及面试表达。操作速查见 [生产部署说明](DEPLOYMENT.md)。实际线上环境是 Ubuntu 24.04、x86_64，域名为 `live.fameex-testnet.xyz`。
 
 ## 1. 一次发布的主线
 
@@ -108,7 +108,7 @@ sudo docker compose version
 
 ### 3.2 DNS 和 HTTPS 的前置条件
 
-阿里云 DNS 控制台打开 `sunshinedairy.net`，配置：
+阿里云 DNS 控制台打开 `fameex-testnet.xyz`，配置：
 
 ```text
 记录类型：A
@@ -119,7 +119,7 @@ sudo docker compose version
 保留其他已有记录。**本机终端：**
 
 ```bash
-dig +short live.sunshinedairy.net A
+dig +short live.fameex-testnet.xyz A
 ```
 
 预期指向服务器。Caddy 启动后会自动申请和续期证书，需要 DNS 正确且公网 80/443 可达。域名解析正确不代表应用已经启动；证书成功也不代表媒体链路已经通过检查。
@@ -192,7 +192,7 @@ python3 deploy/package-release.py verify "$task_revision" - /tmp/streamlab-first
 tar -xzf /tmp/streamlab-first/release.tgz -C deploy
 umask 077
 {
-  printf 'DOMAIN=live.sunshinedairy.net\nPUBLIC_IP=47.80.28.238\n'
+  printf 'DOMAIN=live.fameex-testnet.xyz\nPUBLIC_IP=47.80.28.238\n'
   printf 'PUBLISH_PASSWORD='
   openssl rand -hex 24
   python3 -c 'import json; print("WEB_IMAGE=" + json.load(open("/tmp/streamlab-first/release.json"))["image"])'
@@ -201,7 +201,7 @@ docker compose --project-name streamlab --env-file deploy/.env -f deploy/compose
 docker compose --project-name streamlab --env-file deploy/.env -f deploy/compose.yml pull
 docker compose --project-name streamlab --env-file deploy/.env -f deploy/compose.yml up -d --wait --wait-timeout 120
 curl --fail http://127.0.0.1:3000/api/health
-curl --fail https://live.sunshinedairy.net/api/health
+curl --fail https://live.fameex-testnet.xyz/api/health
 ```
 
 先验证归档，再解压，避免使用未经检查的配置。密码直接写入服务器文件，没有输出到终端。不要把 `deploy/.env` 提交到 Git，也不要将展开后的 `docker compose config` 打印到公共日志；它可能包含密码。`config --quiet` 只验证配置。
@@ -282,7 +282,7 @@ CI 重新验证并保存镜像，Deploy 下载本次发布包并核对提交，�
 成功时运行摘要出现 `DEPLOY_OK`，标明提交、更新服务及健康检查。验证公网：
 
 ```bash
-curl --fail https://live.sunshinedairy.net/api/health
+curl --fail https://live.fameex-testnet.xyz/api/health
 ```
 
 预期状态正常且提交 SHA 与这次发布一致。HTTP 200 只是基础检查，CI 还针对同一生产镜像验证了 RTMP/HLS、浏览器发布和四人合流的媒体链路。
@@ -310,7 +310,7 @@ curl --fail https://live.sunshinedairy.net/api/health
 
 ## 5. 为什么新增 Douyin 会影响这里
 
-`dy.sunshinedairy.net` 和 `live.sunshinedairy.net` 使用同一台机器的 Caddy。Douyin 自己有 Nginx、发布账号、目录和 8088 端口，但公网入口共用一个代理进程。
+`dy.fameex-testnet.xyz` 和 `live.fameex-testnet.xyz` 使用同一台机器的 Caddy。Douyin 自己有 Nginx、发布账号、目录和 8088 端口，但公网入口共用一个代理进程。
 
 只在当前 Caddyfile 追加 `dy` 会留下问题：Streamlab 的下一次发布或回滚会安装版本包中的 Caddyfile，将额外站点删掉。现在管理员把其他站点单独放在：
 
@@ -319,7 +319,7 @@ curl --fail https://live.sunshinedairy.net/api/health
 ```
 
 ```caddyfile
-dy.sunshinedairy.net {
+dy.fameex-testnet.xyz {
     encode zstd gzip
     reverse_proxy 127.0.0.1:8088
 }
@@ -389,7 +389,7 @@ sudo streamlab-deploy recover
 - Biome、TypeScript 检查通过；43 个单元测试通过、2 个条件测试跳过；14 个 Python 部署测试通过。
 - CI 中 3 个生产镜像媒体用例及 SEO 检查通过，覆盖 RTMP/HLS、浏览器发布和四人合流。
 - 管理员入口升级前后四个现有容器启动时间相同；本次应用发布记录只更新 Web 服务。
-- 发布、回滚和恢复期间再次检查，`dy.sunshinedairy.net` 继续返回正确版本。
+- 发布、回滚和恢复期间再次检查，`dy.fameex-testnet.xyz` 继续返回正确版本。
 - 旧管理员入口与 Caddyfile 备份在 `/root/douyin-deploy-backups/20261020/streamlab-entrypoint/`。
 
 没有在生产主动开播来制造阻断条件；直播拒绝、故障恢复和额外站点保留由部署测试覆盖，媒体测试运行在 CI 的隔离容器。没有进行空白主机重装、真实并发容量测试或主机灾难恢复演练。

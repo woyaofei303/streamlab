@@ -6,6 +6,12 @@ Linux 服务器运行 Next.js、MediaMTX 和 Caddy。浏览器通过 HTTPS 访�
 
 生产使用 GitHub Actions 构建，服务器只下载并运行镜像。继续使用现有 Ubuntu x86_64 服务器、`/home/admin/streamlab` 和 Compose 项目名 `streamlab`；不在服务器构建。已有 2 GB 交换内存可保留。
 
+2026-11-07 已迁移到 `live.fameex-testnet.xyz`。OBS 的服务器地址也需改为 `rtmp://live.fameex-testnet.xyz:1935`，推流密码不变。浏览器按域名隔离本地数据，新地址不会自动读取旧域名的演示账户与偏好。
+
+本次域名迁移使用线上提交 `fb2ac6fc3b8406c9a1dbe0d77de306b5b6f5e845` 加域名修改构建，运行版本为 `fb2ac6fc3b8406c9a1dbe0d77de306b5b6f5e845-domain-20261107`。本地生成 Next.js 产物后，在服务器复用原镜像相同的运行时依赖打包；服务器未安装源码构建依赖。迁移版本目录后缀为 `-domain-20261107-retry1`，镜像 `streamlab-domain:20261107` 保留在服务器，其版本包设置 `pull_policy: never`，供后续回滚使用；日常 CI 继续构建并发布带 digest 的正式镜像。不要手工清理仍被保留版本引用的镜像。
+
+新域名的 HTTPS、SEO、健康接口及 HLS/WebRTC 跨域预检已验证。未进行真实 OBS 推流或连麦测试。配置备份位于 `/root/hyperliquid-deploy-backups/final-fameex-20261107T135254Z`，其中运行时配置含秘密，仅管理员可读取。
+
 ## 日常发布与回滚
 
 1. 将修改提交并推送至 `main`。PR 也运行检查，但不发布镜像、不接触生产 SSH 凭证。`main` 的 CI 保留已验证镜像和发布包，供首次安装使用；上传镜像不等于部署服务器。
@@ -92,7 +98,7 @@ Caddy 继续自动申请和续期 HTTPS 证书。本配置使用 Linux host 网�
 
 ### 同机 Douyin 演示站
 
-`dy.sunshinedairy.net` 使用独立的 `douyin` 容器、`/srv/douyin` 目录和回环端口
+`dy.fameex-testnet.xyz` 使用独立的 `douyin` 容器、`/srv/douyin` 目录和回环端口
 `8088`。它和 Streamlab 共用 Caddy 的公网 80/443，因此不能只在当前 Caddyfile
 末尾追加一次配置：下次应用发布可能重写该文件。
 
@@ -102,7 +108,7 @@ Caddy 继续自动申请和续期 HTTPS 证书。本配置使用 Linux host 网�
 额外配置变化也会触发代理更新，避免文件更新而容器仍读取旧挂载。配置不合法时拒绝发布。
 
 ```caddyfile
-dy.sunshinedairy.net {
+dy.fameex-testnet.xyz {
     encode zstd gzip
     reverse_proxy 127.0.0.1:8088
 }
@@ -132,7 +138,7 @@ sudo streamlab-deploy recover
 健康接口无人推流仍返回 200；媒体服务不可达返回 503，响应不包含密码或媒体路径：
 
 ```bash
-curl -fsS https://live.sunshinedairy.net/api/health
+curl -fsS https://live.fameex-testnet.xyz/api/health
 ```
 
 ```json
@@ -142,11 +148,11 @@ curl -fsS https://live.sunshinedairy.net/api/health
 ## OBS 设置
 
 - 服务：自定义。
-- 服务器：`rtmp://live.sunshinedairy.net:1935`。
+- 服务器：`rtmp://live.fameex-testnet.xyz:1935`。
 - 串流密钥：`live?user=publisher&pass=<PUBLISH_PASSWORD 的值>`。
 - 视频：H.264，1280×720，30 FPS，CBR 1500–2500 Kbps，关键帧 2 秒；音频 AAC 128 Kbps。
 - 添加摄像头、窗口或媒体文件来源，确认预览有画面后点击「开始推流」。
-- 观看：`https://live.sunshinedairy.net/live/mei?source=local`。
+- 观看：`https://live.fameex-testnet.xyz/live/mei?source=local`。
 
 网页开播为公开演示：任何访客在 `/studio` 选择 MEI 演示身份，即可点击「网页开播」，无需输入账号或推流密码。Next.js 的 `/api/media/publish` 仅代理 `browser` 的发布与会话清理，并在服务器端使用运行时 `PUBLISH_PASSWORD`；密码不会发送给网页。生产缺少该配置会返回 503，本地开发可沿用匿名媒体服务。跨设备观众使用 `/live/mei?source=browser`。同一时间只允许一路网页直播，已有主播需先停播；OBS、RTC 实验室及连麦房主操作仍需原有推流密码。
 
@@ -159,14 +165,14 @@ SEO 的正式网址定义在 `src/lib/seo.ts`，换域名时同步更新并重�
 `src/app/favicon.ico`、`icon.svg` 和 `apple-icon.png` 由 Next.js 自动生成图标链接。部署后检查实际 HTTP 响应：
 
 ```sh
-node scripts/check-seo.mjs https://live.sunshinedairy.net
+node scripts/check-seo.mjs https://live.fameex-testnet.xyz
 ```
 
 搜索引擎的站点所有权验证和站点地图提交需在对应站长平台完成，本次配置不代表已收录。
 
 ```sh
 sudo docker logs --tail=50 streamlab-web-1
-curl -fsS https://live.sunshinedairy.net/api/media/status
+curl -fsS https://live.fameex-testnet.xyz/api/media/status
 ```
 
 无人推流时 `ready: false` 是正常等待状态。OBS 的录制只保留最近 6 小时；重要录制需另行下载保存。容器日志每个服务最多保留约 30 MB。
